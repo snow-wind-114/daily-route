@@ -30,10 +30,10 @@ git push -u origin main
 
 1. 打开仓库的 `Settings`。
 2. 进入左侧 `Pages`。
-3. 在 `Build and deployment` 的 `Source` 中选择 `GitHub Actions`。
-4. 打开仓库的 `Actions` 页面，等待 `Deploy Daily Route to GitHub Pages` 完成。
+3. 在 `Build and deployment` 的 `Source` 中选择 `Deploy from a branch`。
+4. 分支选择 `main`，目录选择 `/ (root)`，然后保存。
 
-发布后的网址通常是：
+首次发布可能需要等待一至两分钟。网址是：
 
 ```text
 https://你的用户名.github.io/daily-route/
@@ -56,4 +56,4 @@ git commit -m "更新应用"
 git push
 ```
 
-GitHub Actions 会自动重新发布。不要修改仓库名称或 Pages 地址，否则手机会把新网址当成另一份应用数据。
+GitHub Pages 会自动重新发布 `main` 分支的最新内容。不要修改仓库名称或 Pages 地址，否则手机会把新网址当成另一份应用数据。

@@ -18,7 +18,7 @@ node .\serve.mjs
 
 PWA 在首次安装时需要 HTTPS 地址。正式使用时，应将本项目部署到一个固定 HTTPS 域名，然后在安卓 Chrome 中打开并选择“安装应用”或“添加到主屏幕”。通过局域网 IP 的普通 HTTP 地址可以在手机上临时查看页面，但浏览器不会提供完整的离线缓存和安装能力。
 
-GitHub Pages 的具体发布步骤见 [GITHUB_PAGES.md](./GITHUB_PAGES.md)。仓库包含自动部署到 GitHub Pages 的 Actions 工作流。
+GitHub Pages 的具体发布步骤见 [GITHUB_PAGES.md](./GITHUB_PAGES.md)。`main` 分支根目录就是可直接发布的静态网站。
 
 ## 验证
 
