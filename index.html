@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <meta
+      name="description"
+      content="简洁、可离线使用的每日活动安排工具"
+    />
+    <title>每日安排</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-copy">
+          <p class="view-kicker" id="viewKicker">今天</p>
+          <h1 id="viewTitle">每日安排</h1>
+          <p class="view-summary" id="viewSummary">暂无活动</p>
+        </div>
+        <button
+          class="icon-button"
+          id="addTopButton"
+          type="button"
+          aria-label="添加活动"
+          title="添加活动"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+      </header>
+
+      <main class="main-content">
+        <section class="day-view" id="dayView" aria-labelledby="viewTitle">
+          <div class="date-navigation">
+            <button
+              class="date-arrow"
+              id="previousDayButton"
+              type="button"
+              aria-label="前一天"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </button>
+            <button class="today-button" id="goTodayButton" type="button">
+              回到今天
+            </button>
+            <button
+              class="date-arrow"
+              id="nextDayButton"
+              type="button"
+              aria-label="后一天"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="day-empty" id="dayEmpty" hidden>
+            <div>
+              <strong>这一天还没有安排</strong>
+              <span>点击右下角按钮添加活动</span>
+            </div>
+            <button class="text-button" id="emptyAddButton" type="button">
+              添加
+            </button>
+          </div>
+
+          <div class="timeline-scroll" id="timelineScroll">
+            <div class="timeline-root" id="timelineRoot">
+              <div class="time-labels" id="timeLabels"></div>
+              <div class="timeline-canvas" id="timelineCanvas">
+                <div class="event-layer" id="eventLayer"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          class="week-view"
+          id="weekView"
+          aria-labelledby="viewTitle"
+          hidden
+        >
+          <div class="date-navigation">
+            <button
+              class="date-arrow"
+              id="previousWeekButton"
+              type="button"
+              aria-label="上一周"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </button>
+            <button class="today-button" id="goCurrentWeekButton" type="button">
+              回到本周
+            </button>
+            <button
+              class="date-arrow"
+              id="nextWeekButton"
+              type="button"
+              aria-label="下一周"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          </div>
+          <div class="week-list" id="weekList"></div>
+        </section>
+
+        <section
+          class="month-view"
+          id="monthView"
+          aria-labelledby="viewTitle"
+          hidden
+        >
+          <div class="month-navigation">
+            <button
+              class="date-arrow"
+              id="previousMonthButton"
+              type="button"
+              aria-label="上个月"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </button>
+            <button
+              class="today-button"
+              id="goCurrentMonthButton"
+              type="button"
+            >
+              回到本月
+            </button>
+            <button
+              class="date-arrow"
+              id="nextMonthButton"
+              type="button"
+              aria-label="下个月"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="month-grid-wrap">
+            <div class="weekday-row" aria-hidden="true">
+              <span>一</span>
+              <span>二</span>
+              <span>三</span>
+              <span>四</span>
+              <span>五</span>
+              <span>六</span>
+              <span>日</span>
+            </div>
+            <div class="month-grid" id="monthGrid"></div>
+          </div>
+
+          <div class="month-legend">
+            <span><i aria-hidden="true"></i>有活动</span>
+            <span>刻度每格 2 小时 · 仅显示未来六月</span>
+          </div>
+        </section>
+
+        <section
+          class="activity-view"
+          id="activityView"
+          aria-labelledby="viewTitle"
+          hidden
+        >
+          <label class="activity-search">
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="6.5" />
+              <path d="m16 16 4 4" />
+            </svg>
+            <input
+              id="activitySearch"
+              type="search"
+              autocomplete="off"
+              placeholder="搜索活动名称"
+              aria-label="搜索活动名称"
+            />
+          </label>
+
+          <div class="activity-sections" id="activitySections">
+            <section class="activity-section" id="activeActivitySection">
+              <div class="section-heading">
+                <h2>进行中</h2>
+                <span id="activeActivityCount">0</span>
+              </div>
+              <div class="activity-list" id="activeActivityList"></div>
+            </section>
+
+            <section class="activity-section" id="inactiveActivitySection">
+              <div class="section-heading">
+                <h2>已结束</h2>
+                <span id="inactiveActivityCount">0</span>
+              </div>
+              <div class="activity-list" id="inactiveActivityList"></div>
+            </section>
+
+            <div class="activity-empty" id="activityEmpty" hidden>
+              <strong>没有找到相关活动</strong>
+              <span>换一个名称试试</span>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <nav class="bottom-nav" aria-label="主导航">
+        <button
+          class="nav-button is-active"
+          id="dayNavButton"
+          type="button"
+          data-view="day"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M6 3v3M18 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v14H4V6a1 1 0 0 1 1-1Z" />
+          </svg>
+          <span>今天</span>
+        </button>
+        <button
+          class="nav-button"
+          id="weekNavButton"
+          type="button"
+          data-view="week"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+            <path d="M8 4v4M12 10v4M16 16v4" />
+          </svg>
+          <span>本周</span>
+        </button>
+        <button
+          class="nav-button"
+          id="monthNavButton"
+          type="button"
+          data-view="month"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M4 5h16v15H4zM8 3v4M16 3v4M4 9h16" />
+            <path d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01" />
+          </svg>
+          <span>本月</span>
+        </button>
+        <button
+          class="nav-button"
+          id="activityNavButton"
+          type="button"
+          data-view="activity"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M8 6h12M8 12h12M8 18h12" />
+            <path d="M4 6h.01M4 12h.01M4 18h.01" />
+          </svg>
+          <span>活动</span>
+        </button>
+      </nav>
+    </div>
+
+    <button
+      class="fab"
+      id="addFab"
+      type="button"
+      aria-label="添加活动"
+      title="添加活动"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+    </button>
+
+    <dialog class="event-dialog" id="eventDialog">
+      <form class="sheet" id="eventForm" novalidate>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <div class="sheet-header">
+          <div>
+            <p class="sheet-kicker" id="eventDialogKicker">新活动</p>
+            <h2 id="eventDialogTitle">添加活动</h2>
+          </div>
+          <button
+            class="close-button"
+            id="closeEventDialog"
+            type="button"
+            aria-label="关闭"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="form-fields">
+          <label class="field field-full">
+            <span>活动名称</span>
+            <input
+              id="eventName"
+              name="name"
+              type="text"
+              maxlength="80"
+              autocomplete="off"
+              placeholder="例如：高数课"
+              required
+            />
+          </label>
+
+          <label class="field field-full">
+            <span>日期</span>
+            <input id="eventDate" name="date" type="date" required />
+          </label>
+
+          <label class="field">
+            <span>开始时间</span>
+            <input id="startTime" name="startTime" type="time" required />
+          </label>
+
+          <label class="field">
+            <span>结束时间</span>
+            <input id="endTime" name="endTime" type="time" required />
+          </label>
+
+          <div class="field field-full">
+            <span class="field-label">重复方式</span>
+            <div class="segmented-control" role="radiogroup" aria-label="重复方式">
+              <label>
+                <input
+                  type="radio"
+                  name="repeatMode"
+                  value="limited"
+                  checked
+                />
+                <span>有限次数</span>
+              </label>
+              <label>
+                <input type="radio" name="repeatMode" value="infinite" />
+                <span>无限次</span>
+              </label>
+            </div>
+          </div>
+
+          <label class="field">
+            <span>重复间隔</span>
+            <span class="input-with-suffix">
+              <input
+                id="repeatEvery"
+                name="repeatEvery"
+                type="number"
+                min="1"
+                max="14"
+                step="1"
+                value="1"
+                inputmode="numeric"
+                required
+              />
+              <i>天</i>
+            </span>
+          </label>
+
+          <label class="field" id="repeatCountField">
+            <span>重复次数</span>
+            <span class="input-with-suffix">
+              <input
+                id="repeatCount"
+                name="repeatCount"
+                type="number"
+                min="1"
+                max="20"
+                step="1"
+                value="1"
+                inputmode="numeric"
+                required
+              />
+              <i>次</i>
+            </span>
+          </label>
+
+          <label class="field field-full">
+            <span>备注 <small>选填</small></span>
+            <textarea
+              id="eventNotes"
+              name="notes"
+              rows="3"
+              maxlength="500"
+              placeholder="补充地点、准备事项等"
+            ></textarea>
+          </label>
+
+          <p class="edit-scope-note" id="editScopeNote" hidden>
+            保存后修改本次及以后的活动，之前的安排保持不变。
+          </p>
+          <p class="form-error" id="formError" role="alert" hidden></p>
+        </div>
+
+        <div class="sheet-footer">
+          <button
+            class="danger-button"
+            id="deleteEventButton"
+            type="button"
+            hidden
+          >
+            删除本次及以后
+          </button>
+          <span class="footer-spacer"></span>
+          <button class="secondary-button" id="cancelEventButton" type="button">
+            取消
+          </button>
+          <button class="primary-button" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="deleteDialog">
+      <div class="confirm-sheet">
+        <h2>删除活动？</h2>
+        <p id="deleteDialogMessage">
+          将删除本次及以后的活动，之前的安排保持不变。
+        </p>
+        <div class="confirm-actions">
+          <button class="secondary-button" id="cancelDeleteButton" type="button">
+            取消
+          </button>
+          <button class="danger-solid-button" id="confirmDeleteButton" type="button">
+            确认删除
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
