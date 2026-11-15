@@ -1,11 +1,12 @@
 import { normalizeSeries } from "./schedule.js";
 
 export const BACKUP_FORMAT = "daily-route-backup";
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
+export const SUPPORTED_BACKUP_VERSIONS = Object.freeze([1, 2]);
 
 export function createBackup(
   events,
-  { appVersion = "0.2.0", now = new Date() } = {},
+  { appVersion = "0.3.0", now = new Date() } = {},
 ) {
   const normalizedEvents = events.map(normalizeSeries).filter(Boolean);
   return {
@@ -29,7 +30,7 @@ export function parseBackup(text) {
   if (
     !payload ||
     payload.format !== BACKUP_FORMAT ||
-    payload.version !== BACKUP_VERSION ||
+    !SUPPORTED_BACKUP_VERSIONS.includes(payload.version) ||
     !Array.isArray(payload.events)
   ) {
     throw new Error("备份文件格式或版本不受支持");
@@ -50,11 +51,37 @@ export function parseBackup(text) {
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
+    sourceVersion: payload.version,
     appVersion:
       typeof payload.appVersion === "string" ? payload.appVersion : "",
     exportedAt:
       typeof payload.exportedAt === "string" ? payload.exportedAt : "",
     eventCount: events.length,
     events,
+  };
+}
+
+export function summarizeEvents(events) {
+  return {
+    eventCount: events.length,
+    notificationCount: events.filter(
+      (event) =>
+        event.reminderMode === "notification" && !event.pauses.some(
+          (pause) => pause.endDate === null,
+        ),
+    ).length,
+    alarmCount: events.filter(
+      (event) =>
+        event.reminderMode === "alarm" && !event.pauses.some(
+          (pause) => pause.endDate === null,
+        ),
+    ).length,
+    pausedCount: events.filter((event) =>
+      event.pauses.some((pause) => pause.endDate === null),
+    ).length,
+    overrideCount: events.reduce(
+      (total, event) => total + event.occurrenceOverrides.length,
+      0,
+    ),
   };
 }

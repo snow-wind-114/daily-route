@@ -1,12 +1,12 @@
 {
   "name": "daily-route",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "packageManager": "npm@12.2.2",
   "scripts": {
     "test": "node --test",
-    "check": "node --check app.js && node --check account.js && node --check app-state.js && node --check backup.js && node --check date-utils.js && node --check native-files.js && node --check notifications.js && node --check schedule.js && node --check sw.js",
+    "check": "node --check app.js && node --check account.js && node --check app-state.js && node --check backup.js && node --check date-utils.js && node --check native-files.js && node --check native-widget.js && node --check notifications.js && node --check recovery.js && node --check schedule.js && node --check update-check.js && node --check sw.js && node scripts/check-versions.mjs",
     "build:web": "node scripts/prepare-android-web.mjs",
     "cap:sync": "npm run build:web && node node_modules/@capacitor/cli/bin/capacitor sync android",
     "android:open": "npm run cap:sync && node node_modules/@capacitor/cli/bin/capacitor open android",
@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
     "@capacitor/core": "^8.6.2",
     "@capacitor/filesystem": "^8.1.5",
     "@capacitor/local-notifications": "^8.3.1",

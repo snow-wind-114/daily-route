@@ -32,9 +32,13 @@ const files = [
   "backup.js",
   "date-utils.js",
   "native-files.js",
+  "native-widget.js",
   "notifications.js",
+  "recovery.js",
   "schedule.js",
   "sw.js",
+  "update-check.js",
+  "update.json",
   "manifest.webmanifest",
 ];
 

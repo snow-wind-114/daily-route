@@ -4,4 +4,6 @@
     <string name="title_activity_main">每日安排</string>
     <string name="package_name">com.snowwind114.dailyroute</string>
     <string name="custom_url_scheme">com.snowwind114.dailyroute</string>
+    <string name="widget_name">今日活动</string>
+    <string name="widget_description">显示今天的活动和下一项安排</string>
 </resources>

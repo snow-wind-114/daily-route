@@ -6,12 +6,17 @@ import {
   timeToMinutes,
 } from "./date-utils.js";
 
-export const STORAGE_VERSION = 1;
+export const STORAGE_VERSION = 2;
 export const MAX_REPEAT_EVERY = 14;
 export const MAX_REPEAT_COUNT = 20;
 export const OCCUPANCY_SLOT_MINUTES = 120;
 export const DEFAULT_REMINDER_MINUTES = 5;
 export const MAX_REMINDER_MINUTES = 1440;
+export const REMINDER_MODES = Object.freeze([
+  "none",
+  "notification",
+  "alarm",
+]);
 
 function createId() {
   if (globalThis.crypto?.randomUUID) {
@@ -26,6 +31,123 @@ function integerInRange(value, minimum, maximum) {
   return Number.isInteger(number) && number >= minimum && number <= maximum
     ? number
     : null;
+}
+
+function normalizeReminderMode(rawMode, legacyEnabled) {
+  if (REMINDER_MODES.includes(rawMode)) {
+    return rawMode;
+  }
+  return legacyEnabled === true ? "notification" : "none";
+}
+
+function normalizeReminderMinutes(value) {
+  return (
+    integerInRange(value, 0, MAX_REMINDER_MINUTES) ??
+    DEFAULT_REMINDER_MINUTES
+  );
+}
+
+function normalizeOverride(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const title = typeof raw.title === "string" ? raw.title.trim() : "";
+  const startMinutes = timeToMinutes(raw.startTime);
+  const endMinutes = timeToMinutes(raw.endTime);
+  if (
+    !title ||
+    !isISODate(raw.occurrenceDate) ||
+    !isISODate(raw.date) ||
+    startMinutes === null ||
+    endMinutes === null ||
+    endMinutes <= startMinutes
+  ) {
+    return null;
+  }
+
+  return {
+    occurrenceDate: raw.occurrenceDate,
+    title: title.slice(0, 80),
+    date: raw.date,
+    startTime: raw.startTime,
+    endTime: raw.endTime,
+    notes: typeof raw.notes === "string" ? raw.notes.slice(0, 500) : "",
+    reminderMode: normalizeReminderMode(raw.reminderMode, raw.reminderEnabled),
+    reminderMinutesBefore: normalizeReminderMinutes(
+      raw.reminderMinutesBefore,
+    ),
+    updatedAt:
+      typeof raw.updatedAt === "string"
+        ? raw.updatedAt
+        : new Date().toISOString(),
+  };
+}
+
+function normalizeOverrides(rawOverrides) {
+  if (!Array.isArray(rawOverrides)) {
+    return [];
+  }
+
+  const byDate = new Map();
+  for (const raw of rawOverrides) {
+    const override = normalizeOverride(raw);
+    if (override) {
+      byDate.set(override.occurrenceDate, override);
+    }
+  }
+  return [...byDate.values()].sort((left, right) =>
+    left.occurrenceDate.localeCompare(right.occurrenceDate),
+  );
+}
+
+function normalizePauses(rawPauses) {
+  if (!Array.isArray(rawPauses)) {
+    return [];
+  }
+
+  const pauses = rawPauses
+    .map((raw) => {
+      if (!raw || !isISODate(raw.startDate)) {
+        return null;
+      }
+      const endDate =
+        raw.endDate === null || raw.endDate === undefined
+          ? null
+          : isISODate(raw.endDate) && raw.endDate >= raw.startDate
+            ? raw.endDate
+            : null;
+      return { startDate: raw.startDate, endDate };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.startDate.localeCompare(right.startDate));
+
+  const merged = [];
+  for (const pause of pauses) {
+    const previous = merged.at(-1);
+    if (!previous) {
+      merged.push(pause);
+      continue;
+    }
+
+    const previousEnd = previous.endDate;
+    const touches =
+      previousEnd === null ||
+      pause.startDate <= addDays(previousEnd, 1);
+    if (!touches) {
+      merged.push(pause);
+      continue;
+    }
+
+    if (previousEnd !== null) {
+      previous.endDate =
+        pause.endDate === null
+          ? null
+          : [previousEnd, pause.endDate].sort().at(-1);
+    }
+  }
+
+  return merged;
 }
 
 export function normalizeSeries(raw) {
@@ -74,13 +196,15 @@ export function normalizeSeries(raw) {
     repeatEvery,
     repeatCount,
     notes: typeof raw.notes === "string" ? raw.notes.slice(0, 500) : "",
-    reminderEnabled: raw.reminderEnabled === true,
-    reminderMinutesBefore:
-      integerInRange(
-        raw.reminderMinutesBefore,
-        0,
-        MAX_REMINDER_MINUTES,
-      ) ?? DEFAULT_REMINDER_MINUTES,
+    reminderMode: normalizeReminderMode(
+      raw.reminderMode,
+      raw.reminderEnabled,
+    ),
+    reminderMinutesBefore: normalizeReminderMinutes(
+      raw.reminderMinutesBefore,
+    ),
+    occurrenceOverrides: normalizeOverrides(raw.occurrenceOverrides),
+    pauses: normalizePauses(raw.pauses),
     endBefore,
     createdAt:
       typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
@@ -128,7 +252,7 @@ export function validateActivityInput(
   }
 
   if (
-    input.reminderEnabled === true &&
+    input.reminderMode !== "none" &&
     integerInRange(
       input.reminderMinutesBefore,
       0,
@@ -152,35 +276,62 @@ export function seriesFromInput(input, { id, createdAt } = {}) {
     repeatEvery: Number(input.repeatEvery),
     repeatCount: input.repeatCount === null ? null : Number(input.repeatCount),
     notes: input.notes,
-    reminderEnabled: input.reminderEnabled === true,
+    reminderMode: input.reminderMode,
     reminderMinutesBefore:
       input.reminderMinutesBefore ?? DEFAULT_REMINDER_MINUTES,
+    occurrenceOverrides: [],
+    pauses: [],
     endBefore: null,
     createdAt: createdAt ?? now,
     updatedAt: now,
   });
 }
 
-export function getOccurrenceIndex(series, occurrenceDate) {
+function isNominalOccurrenceDate(series, occurrenceDate) {
   if (!isISODate(occurrenceDate) || occurrenceDate < series.date) {
-    return null;
+    return false;
   }
-
   if (series.endBefore && occurrenceDate >= series.endBefore) {
-    return null;
+    return false;
   }
 
   const rawIndex = diffCalendarDays(series.date, occurrenceDate);
-  if (rawIndex % series.repeatEvery !== 0) {
+  return rawIndex % series.repeatEvery === 0;
+}
+
+export function isDatePaused(series, date) {
+  return series.pauses.some(
+    (pause) =>
+      date >= pause.startDate &&
+      (pause.endDate === null || date <= pause.endDate),
+  );
+}
+
+export function isSeriesPaused(series) {
+  return series.pauses.some((pause) => pause.endDate === null);
+}
+
+export function getOccurrenceIndex(series, occurrenceDate) {
+  if (!isNominalOccurrenceDate(series, occurrenceDate)) {
     return null;
   }
 
-  const index = rawIndex / series.repeatEvery;
-  if (series.repeatCount !== null && index >= series.repeatCount) {
-    return null;
+  let candidate = series.date;
+  let activeIndex = 0;
+  while (candidate <= occurrenceDate) {
+    if (!isDatePaused(series, candidate)) {
+      if (series.repeatCount !== null && activeIndex >= series.repeatCount) {
+        return null;
+      }
+      if (candidate === occurrenceDate) {
+        return activeIndex;
+      }
+      activeIndex += 1;
+    }
+    candidate = addDays(candidate, series.repeatEvery);
   }
 
-  return index;
+  return null;
 }
 
 export function remainingRepeatCount(series, occurrenceDate) {
@@ -192,58 +343,105 @@ export function remainingRepeatCount(series, occurrenceDate) {
   return index === null ? 0 : Math.max(0, series.repeatCount - index);
 }
 
+function effectiveSeriesForOccurrence(series, candidate) {
+  const override = series.occurrenceOverrides.find(
+    (item) => item.occurrenceDate === candidate,
+  );
+  if (!override) {
+    return {
+      effectiveSeries: { ...series, date: candidate },
+      override: null,
+    };
+  }
+
+  return {
+    override,
+    effectiveSeries: {
+      ...series,
+      title: override.title,
+      date: override.date,
+      startTime: override.startTime,
+      endTime: override.endTime,
+      notes: override.notes,
+      reminderMode: override.reminderMode,
+      reminderMinutesBefore: override.reminderMinutesBefore,
+      occurrenceOverrides: [],
+      pauses: [],
+    },
+  };
+}
+
 export function occurrencesBetween(events, startDate, endDate) {
   const occurrences = [];
+  if (!isISODate(startDate) || !isISODate(endDate) || startDate > endDate) {
+    return occurrences;
+  }
 
   for (const series of events) {
     if (series.date > endDate) {
       continue;
     }
-
     if (series.endBefore && startDate >= series.endBefore) {
       continue;
     }
 
-    let candidate =
-      series.date >= startDate ? series.date : startDate;
-    const offset = diffCalendarDays(series.date, candidate);
-    const remainder = ((offset % series.repeatEvery) + series.repeatEvery) %
-      series.repeatEvery;
-
-    if (remainder !== 0) {
-      candidate = addDays(candidate, series.repeatEvery - remainder);
-    }
-
+    let candidate = series.date;
+    let activeIndex = 0;
     while (candidate <= endDate) {
       if (series.endBefore && candidate >= series.endBefore) {
         break;
       }
-
-      const index = diffCalendarDays(series.date, candidate) /
-        series.repeatEvery;
-      if (series.repeatCount !== null && index >= series.repeatCount) {
+      if (series.repeatCount !== null && activeIndex >= series.repeatCount) {
         break;
       }
+      if (isDatePaused(series, candidate)) {
+        candidate = addDays(candidate, series.repeatEvery);
+        continue;
+      }
 
-      occurrences.push({
+      const { effectiveSeries, override } = effectiveSeriesForOccurrence(
         series,
-        date: candidate,
-        occurrenceIndex: index,
-      });
+        candidate,
+      );
+      if (candidate >= startDate || effectiveSeries.date >= startDate) {
+        if (effectiveSeries.date >= startDate && effectiveSeries.date <= endDate) {
+          occurrences.push({
+            series: effectiveSeries,
+            originalSeries: series,
+            date: effectiveSeries.date,
+            originalDate: candidate,
+            occurrenceIndex: activeIndex,
+            override,
+          });
+        }
+      }
+
+      activeIndex += 1;
       candidate = addDays(candidate, series.repeatEvery);
     }
   }
 
-  return occurrences;
+  return occurrences.sort(
+    (left, right) =>
+      left.date.localeCompare(right.date) ||
+      timeToMinutes(left.series.startTime) -
+        timeToMinutes(right.series.startTime) ||
+      left.series.title.localeCompare(right.series.title, "zh-CN"),
+  );
 }
 
 export function occurrencesOnDate(events, date) {
-  return occurrencesBetween(events, date, date).sort((left, right) => {
-    const startDifference =
-      timeToMinutes(left.series.startTime) -
-      timeToMinutes(right.series.startTime);
-    return startDifference || left.series.title.localeCompare(right.series.title);
-  });
+  return occurrencesBetween(events, date, date);
+}
+
+function normalizeConflictIgnore(ignore) {
+  if (typeof ignore === "string") {
+    return { seriesId: ignore, originalDate: null };
+  }
+  return {
+    seriesId: ignore?.seriesId ?? null,
+    originalDate: ignore?.originalDate ?? null,
+  };
 }
 
 export function findScheduleConflict(
@@ -251,35 +449,36 @@ export function findScheduleConflict(
   candidate,
   startDate,
   endDate,
-  ignoreSeriesId = null,
+  ignore = null,
 ) {
-  const candidateStart = timeToMinutes(candidate.startTime);
-  const candidateEnd = timeToMinutes(candidate.endTime);
+  const ignored = normalizeConflictIgnore(ignore);
 
   for (const occurrence of occurrencesBetween(
     [candidate],
     startDate,
     endDate,
   )) {
-    for (const existingSeries of events) {
-      if (existingSeries.id === ignoreSeriesId) {
+    const existingOccurrences = occurrencesOnDate(events, occurrence.date);
+    const candidateStart = timeToMinutes(occurrence.series.startTime);
+    const candidateEnd = timeToMinutes(occurrence.series.endTime);
+
+    for (const existing of existingOccurrences) {
+      if (
+        existing.series.id === ignored.seriesId &&
+        (ignored.originalDate === null ||
+          existing.originalDate === ignored.originalDate)
+      ) {
         continue;
       }
 
-      const existingOccurrences = occurrencesOnDate(
-        [existingSeries],
-        occurrence.date,
-      );
-      for (const existing of existingOccurrences) {
-        const existingStart = timeToMinutes(existing.series.startTime);
-        const existingEnd = timeToMinutes(existing.series.endTime);
-        if (candidateStart < existingEnd && candidateEnd > existingStart) {
-          return {
-            date: occurrence.date,
-            candidateSeries: candidate,
-            existingSeries: existing.series,
-          };
-        }
+      const existingStart = timeToMinutes(existing.series.startTime);
+      const existingEnd = timeToMinutes(existing.series.endTime);
+      if (candidateStart < existingEnd && candidateEnd > existingStart) {
+        return {
+          date: occurrence.date,
+          candidateSeries: occurrence.series,
+          existingSeries: existing.series,
+        };
       }
     }
   }
@@ -363,25 +562,94 @@ export function lastOccurrenceOnOrBefore(series, date) {
     return null;
   }
 
-  let effectiveDate = date;
-  if (series.endBefore && effectiveDate >= series.endBefore) {
-    effectiveDate = addDays(series.endBefore, -1);
-  }
+  return occurrencesBetween([series], series.date, date).at(-1)?.date ?? null;
+}
 
-  if (effectiveDate < series.date) {
-    return null;
-  }
+function occurrenceFromInput(input) {
+  return seriesFromInput({
+    ...input,
+    repeatEvery: 1,
+    repeatCount: 1,
+  });
+}
 
-  let index = Math.floor(
-    diffCalendarDays(series.date, effectiveDate) / series.repeatEvery,
+export function getOccurrenceOverride(series, occurrenceDate) {
+  return (
+    series.occurrenceOverrides.find(
+      (override) => override.occurrenceDate === occurrenceDate,
+    ) ?? null
   );
-  if (series.repeatCount !== null) {
-    index = Math.min(index, series.repeatCount - 1);
+}
+
+export function applyOccurrenceOverride(
+  events,
+  seriesId,
+  occurrenceDate,
+  nextInput,
+) {
+  const target = events.find((event) => event.id === seriesId);
+  if (!target) {
+    throw new Error("找不到活动");
+  }
+  if (getOccurrenceIndex(target, occurrenceDate) === null) {
+    throw new Error("所选日期不是该活动的一次安排");
   }
 
-  return index < 0
-    ? null
-    : addDays(series.date, index * series.repeatEvery);
+  const candidate = occurrenceFromInput(nextInput);
+  if (!candidate) {
+    throw new Error("单次活动内容不完整");
+  }
+  const override = normalizeOverride({
+    occurrenceDate,
+    title: candidate.title,
+    date: candidate.date,
+    startTime: candidate.startTime,
+    endTime: candidate.endTime,
+    notes: candidate.notes,
+    reminderMode: candidate.reminderMode,
+    reminderMinutesBefore: candidate.reminderMinutesBefore,
+    updatedAt: new Date().toISOString(),
+  });
+
+  return events.map((event) => {
+    if (event.id !== seriesId) {
+      return event;
+    }
+    return {
+      ...event,
+      occurrenceOverrides: normalizeOverrides([
+        ...event.occurrenceOverrides.filter(
+          (item) => item.occurrenceDate !== occurrenceDate,
+        ),
+        override,
+      ]),
+      updatedAt: new Date().toISOString(),
+    };
+  });
+}
+
+function matchingOverridesAfterEdit(replacement, overrides, afterDate) {
+  return overrides.filter(
+    (override) =>
+      override.occurrenceDate > afterDate &&
+      getOccurrenceIndex(replacement, override.occurrenceDate) !== null,
+  );
+}
+
+export function unmatchedOverridesForSeriesEdit(
+  series,
+  occurrenceDate,
+  nextInput,
+) {
+  const replacement = seriesFromInput(nextInput);
+  if (!replacement) {
+    return [];
+  }
+  return series.occurrenceOverrides.filter(
+    (override) =>
+      override.occurrenceDate > occurrenceDate &&
+      getOccurrenceIndex(replacement, override.occurrenceDate) === null,
+  );
 }
 
 export function splitSeriesForEdit(
@@ -405,21 +673,92 @@ export function splitSeriesForEdit(
       id: target.id,
       createdAt: target.createdAt,
     });
+    replacement.occurrenceOverrides = matchingOverridesAfterEdit(
+      replacement,
+      target.occurrenceOverrides,
+      occurrenceDate,
+    );
+    replacement.pauses = target.pauses.filter(
+      (pause) => pause.startDate > occurrenceDate,
+    );
     return events.map((event) => (event.id === target.id ? replacement : event));
   }
 
   const original = {
     ...target,
     endBefore: occurrenceDate,
+    occurrenceOverrides: target.occurrenceOverrides.filter(
+      (override) => override.occurrenceDate < occurrenceDate,
+    ),
+    pauses: target.pauses.filter((pause) => pause.startDate < occurrenceDate),
     updatedAt: new Date().toISOString(),
   };
   const replacement = seriesFromInput(nextInput);
+  replacement.occurrenceOverrides = matchingOverridesAfterEdit(
+    replacement,
+    target.occurrenceOverrides,
+    occurrenceDate,
+  );
+  replacement.pauses = target.pauses.filter(
+    (pause) => pause.startDate > occurrenceDate,
+  );
 
   return events.flatMap((event) => {
     if (event.id !== target.id) {
       return [event];
     }
     return [original, replacement];
+  });
+}
+
+export function pauseSeries(events, seriesId, occurrenceDate) {
+  const target = events.find((event) => event.id === seriesId);
+  if (!target) {
+    throw new Error("找不到活动");
+  }
+  if (getOccurrenceIndex(target, occurrenceDate) === null) {
+    throw new Error("所选日期不是该活动的一次安排");
+  }
+
+  return events.map((event) =>
+    event.id === seriesId
+      ? {
+          ...event,
+          pauses: normalizePauses([
+            ...event.pauses,
+            { startDate: occurrenceDate, endDate: null },
+          ]),
+          updatedAt: new Date().toISOString(),
+        }
+      : event,
+  );
+}
+
+export function resumeSeries(events, seriesId, resumeDate) {
+  const target = events.find((event) => event.id === seriesId);
+  if (!target || !isSeriesPaused(target)) {
+    return events;
+  }
+
+  const pauseEnd = addDays(resumeDate, -1);
+  return events.map((event) => {
+    if (event.id !== seriesId) {
+      return event;
+    }
+    return {
+      ...event,
+      pauses: normalizePauses(
+        event.pauses.flatMap((pause) => {
+          if (pause.endDate !== null) {
+            return [pause];
+          }
+          return resumeDate <= pause.startDate
+            ? []
+            : [{ startDate: pause.startDate, endDate: pauseEnd }];
+        }),
+      ),
+      updatedAt: new Date().toISOString(),
+    };
   });
 }
 
@@ -443,6 +782,9 @@ export function deleteOccurrenceAndFuture(events, seriesId, occurrenceDate) {
       ? {
           ...event,
           endBefore: occurrenceDate,
+          occurrenceOverrides: event.occurrenceOverrides.filter(
+            (override) => override.occurrenceDate < occurrenceDate,
+          ),
           updatedAt: new Date().toISOString(),
         }
       : event,
@@ -463,4 +805,3 @@ export function readStoragePayload(payload) {
 
   return payload.events.map(normalizeSeries).filter(Boolean);
 }
-

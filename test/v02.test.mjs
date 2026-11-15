@@ -34,7 +34,7 @@ function makeSeries(overrides = {}) {
     repeatEvery: 1,
     repeatCount: 1,
     notes: "带电脑",
-    reminderEnabled: true,
+    reminderMode: "notification",
     reminderMinutesBefore: 5,
     ...overrides,
   });
@@ -103,7 +103,7 @@ test("account validation enforces username, password and confirmation", () => {
   );
 });
 
-test("native v2 state preserves account, session and reminder fields", async () => {
+test("native state preserves account, session and reminder fields", async () => {
   const account = await createLocalAccount(
     { username: "小风", password: "secret123" },
     { iterations: 1000 },
@@ -118,7 +118,7 @@ test("native v2 state preserves account, session and reminder fields", async () 
 
   assert.equal(state.sessionActive, true);
   assert.equal(state.events.length, 1);
-  assert.equal(state.events[0].reminderEnabled, true);
+  assert.equal(state.events[0].reminderMode, "notification");
   assert.equal(state.events[0].reminderMinutesBefore, 5);
   assert.equal(normalizeNativeState({ ...payload, version: 1 }), null);
 });
@@ -127,7 +127,7 @@ test("native storage distinguishes empty and corrupt data", async () => {
   const storage = makeMemoryStorage();
   assert.equal(readNativeState(storage).status, "empty");
 
-  storage.setItem("daily-route.storage.v2", "{broken");
+  storage.setItem("daily-route.storage.v3", "{broken");
   assert.equal(readNativeState(storage).status, "corrupt");
 
   const account = await createLocalAccount(
@@ -146,7 +146,7 @@ test("native storage distinguishes empty and corrupt data", async () => {
 
 test("backup round trip contains events but never account credentials", () => {
   const backup = createBackup([makeSeries()], {
-    appVersion: "0.2.0",
+    appVersion: "0.3.0",
     now: new Date("2026-11-15T01:00:00Z"),
   });
   const text = JSON.stringify(backup);
@@ -180,7 +180,7 @@ test("reminder plan uses local occurrence time and skips elapsed reminders", () 
 });
 
 test("disabled reminders do not create notification plans", () => {
-  const event = makeSeries({ reminderEnabled: false });
+  const event = makeSeries({ reminderMode: "none" });
   const plan = buildReminderPlan([event], {
     startDate: "2026-11-16",
     endDate: "2026-11-16",

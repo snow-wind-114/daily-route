@@ -16,17 +16,23 @@ import {
   todayISO,
 } from "./date-utils.js";
 import {
+  applyOccurrenceOverride,
   deleteOccurrenceAndFuture,
   findConflictWithinRange,
   findScheduleConflict,
+  getOccurrenceOverride,
   getOccurrenceIndex,
+  isSeriesPaused,
   lastOccurrenceOnOrBefore,
   occupancyByDayBetween,
   occurrencesBetween,
   occurrencesOnDate,
+  pauseSeries,
   remainingRepeatCount,
+  resumeSeries,
   seriesFromInput,
   splitSeriesForEdit,
+  unmatchedOverridesForSeriesEdit,
   validateActivityInput,
 } from "./schedule.js";
 import {
@@ -38,6 +44,7 @@ import {
 import {
   NATIVE_STORAGE_KEY,
   WEB_STORAGE_KEY,
+  migrateNativeState,
   readNativeState,
   readWebEvents,
   removeNativeState,
@@ -47,17 +54,37 @@ import {
 import {
   createBackup,
   parseBackup,
+  summarizeEvents,
 } from "./backup.js";
 import {
   clearScheduledNotifications,
+  getExactAlarmPermissionState,
   isNativeApp,
   registerNotificationActionListener,
+  requestExactAlarmPermission,
   requestNotificationPermission,
+  scheduleTestReminder,
   syncScheduledNotifications,
 } from "./notifications.js";
 import { shareNativeBackup } from "./native-files.js";
+import {
+  addRecoveryPoint,
+  clearRecoveryPoints,
+  markManualExport,
+  readLastManualExport,
+  readRecoveryPoints,
+  shouldRemindBackup,
+} from "./recovery.js";
+import { checkForUpdate } from "./update-check.js";
+import {
+  clearNativeWidgetSnapshot,
+  consumeWidgetLaunch,
+  registerWidgetLaunchListener,
+  syncNativeWidgetSnapshot,
+} from "./native-widget.js";
 
-const APP_VERSION = "0.2.0";
+const APP_VERSION = "0.3.0";
+const APP_VERSION_CODE = 3;
 const SLOT_HEIGHT = 44;
 const PIXELS_PER_MINUTE = SLOT_HEIGHT / 30;
 const nativeApp = isNativeApp();
@@ -83,6 +110,7 @@ const elements = {
   viewKicker: document.querySelector("#viewKicker"),
   viewTitle: document.querySelector("#viewTitle"),
   viewSummary: document.querySelector("#viewSummary"),
+  webPreviewBanner: document.querySelector("#webPreviewBanner"),
   dayView: document.querySelector("#dayView"),
   weekView: document.querySelector("#weekView"),
   monthView: document.querySelector("#monthView"),
@@ -109,10 +137,13 @@ const elements = {
   monthGrid: document.querySelector("#monthGrid"),
   activitySearch: document.querySelector("#activitySearch"),
   activeActivitySection: document.querySelector("#activeActivitySection"),
+  pausedActivitySection: document.querySelector("#pausedActivitySection"),
   inactiveActivitySection: document.querySelector("#inactiveActivitySection"),
   activeActivityCount: document.querySelector("#activeActivityCount"),
+  pausedActivityCount: document.querySelector("#pausedActivityCount"),
   inactiveActivityCount: document.querySelector("#inactiveActivityCount"),
   activeActivityList: document.querySelector("#activeActivityList"),
+  pausedActivityList: document.querySelector("#pausedActivityList"),
   inactiveActivityList: document.querySelector("#inactiveActivityList"),
   activityEmpty: document.querySelector("#activityEmpty"),
   androidDownloadButton: document.querySelector("#androidDownloadButton"),
@@ -134,14 +165,19 @@ const elements = {
   repeatCount: document.querySelector("#repeatCount"),
   repeatCountField: document.querySelector("#repeatCountField"),
   repeatModeInputs: document.querySelectorAll('input[name="repeatMode"]'),
+  editScopeField: document.querySelector("#editScopeField"),
+  editScopeInputs: document.querySelectorAll('input[name="editScope"]'),
+  repeatModeField: document.querySelector("#repeatModeField"),
+  repeatEveryField: document.querySelector("#repeatEveryField"),
   reminderField: document.querySelector("#reminderField"),
-  reminderEnabled: document.querySelector("#reminderEnabled"),
+  reminderModeInputs: document.querySelectorAll('input[name="reminderMode"]'),
   reminderMinutesField: document.querySelector("#reminderMinutesField"),
   reminderMinutesBefore: document.querySelector("#reminderMinutesBefore"),
   reminderStatusNote: document.querySelector("#reminderStatusNote"),
   eventNotes: document.querySelector("#eventNotes"),
   editScopeNote: document.querySelector("#editScopeNote"),
   formError: document.querySelector("#formError"),
+  pauseEventButton: document.querySelector("#pauseEventButton"),
   deleteEventButton: document.querySelector("#deleteEventButton"),
   deleteDialog: document.querySelector("#deleteDialog"),
   deleteDialogMessage: document.querySelector("#deleteDialogMessage"),
@@ -152,10 +188,20 @@ const elements = {
   notificationPermissionText: document.querySelector(
     "#notificationPermissionText",
   ),
+  exactAlarmPermissionText: document.querySelector(
+    "#exactAlarmPermissionText",
+  ),
+  backupStatusText: document.querySelector("#backupStatusText"),
   closeAccountDialog: document.querySelector("#closeAccountDialog"),
   changePasswordButton: document.querySelector("#changePasswordButton"),
   exportDataButton: document.querySelector("#exportDataButton"),
   importDataButton: document.querySelector("#importDataButton"),
+  recoveryButton: document.querySelector("#recoveryButton"),
+  checkUpdateButton: document.querySelector("#checkUpdateButton"),
+  testNotificationButton: document.querySelector("#testNotificationButton"),
+  testAlarmButton: document.querySelector("#testAlarmButton"),
+  openAlarmSettingsButton: document.querySelector("#openAlarmSettingsButton"),
+  updateStatusText: document.querySelector("#updateStatusText"),
   logoutButton: document.querySelector("#logoutButton"),
   passwordDialog: document.querySelector("#passwordDialog"),
   passwordForm: document.querySelector("#passwordForm"),
@@ -175,6 +221,29 @@ const elements = {
   cancelImportButton: document.querySelector("#cancelImportButton"),
   confirmImportButton: document.querySelector("#confirmImportButton"),
   importFileInput: document.querySelector("#importFileInput"),
+  pauseDialog: document.querySelector("#pauseDialog"),
+  pauseDialogMessage: document.querySelector("#pauseDialogMessage"),
+  cancelPauseButton: document.querySelector("#cancelPauseButton"),
+  confirmPauseButton: document.querySelector("#confirmPauseButton"),
+  overrideDiscardDialog: document.querySelector("#overrideDiscardDialog"),
+  overrideDiscardMessage: document.querySelector(
+    "#overrideDiscardMessage",
+  ),
+  cancelOverrideDiscardButton: document.querySelector(
+    "#cancelOverrideDiscardButton",
+  ),
+  confirmOverrideDiscardButton: document.querySelector(
+    "#confirmOverrideDiscardButton",
+  ),
+  recoveryDialog: document.querySelector("#recoveryDialog"),
+  closeRecoveryDialog: document.querySelector("#closeRecoveryDialog"),
+  recoveryList: document.querySelector("#recoveryList"),
+  updateDialog: document.querySelector("#updateDialog"),
+  updateDialogTitle: document.querySelector("#updateDialogTitle"),
+  updateDialogMessage: document.querySelector("#updateDialogMessage"),
+  updateNotes: document.querySelector("#updateNotes"),
+  closeUpdateButton: document.querySelector("#closeUpdateButton"),
+  openUpdateButton: document.querySelector("#openUpdateButton"),
   toast: document.querySelector("#toast"),
 };
 
@@ -196,6 +265,9 @@ const state = {
   dayScrollTarget: null,
   notificationStatus: null,
   pendingImportEvents: null,
+  pendingSeriesEdit: null,
+  pendingPause: null,
+  pendingUpdate: null,
 };
 
 let toastTimer = null;
@@ -210,8 +282,17 @@ function endOfWeek(isoDate) {
 
 function loadInitialData() {
   if (nativeApp) {
-    const loaded = readNativeState();
+    const loaded = migrateNativeState();
     if (loaded.status === "ok") {
+      return {
+        events: loaded.state.events,
+        account: loaded.state.account,
+        authenticated: loaded.state.sessionActive,
+        storageCorrupt: false,
+      };
+    }
+
+    if (loaded.status === "migrate") {
       return {
         events: loaded.state.events,
         account: loaded.state.account,
@@ -274,6 +355,9 @@ function persistEvents() {
     } else {
       writeWebEvents(state.events);
     }
+    if (nativeApp && state.authenticated) {
+      void syncNativeWidgetSnapshot(state.events);
+    }
     void refreshNativeNotifications();
     return true;
   } catch (error) {
@@ -300,7 +384,10 @@ function notificationStatusText(status) {
     return "通知权限未开启，活动提醒不会送达。";
   }
   if (status.scheduled > 0) {
-    return `通知权限已开启，当前已安排 ${status.scheduled} 次提醒。安卓系统可能延迟几分钟。`;
+    const downgraded = status.downgraded > 0
+      ? `，其中 ${status.downgraded} 次闹钟因权限不足已降级`
+      : "";
+    return `通知权限已开启，当前已安排 ${status.scheduled} 次提醒${downgraded}。`;
   }
   return "通知权限已开启，目前没有待安排的活动提醒。";
 }
@@ -309,6 +396,10 @@ function renderNotificationStatus() {
   const message = notificationStatusText(state.notificationStatus);
   elements.notificationPermissionText.textContent = message;
   elements.reminderStatusNote.textContent = message;
+  const exactGranted = state.notificationStatus?.exactAlarmGranted;
+  elements.exactAlarmPermissionText.textContent = exactGranted
+    ? "精确闹钟权限已开启，闹钟提醒会尽量准点触发。"
+    : "精确闹钟权限未开启；选择闹钟的活动会按普通通知降级。";
 }
 
 async function refreshNativeNotifications() {
@@ -331,13 +422,34 @@ async function refreshNativeNotifications() {
   renderNotificationStatus();
 }
 
+function currentReminderMode() {
+  return (
+    [...elements.reminderModeInputs].find((input) => input.checked)?.value ??
+    "none"
+  );
+  void registerWidgetLaunchListener((target) => {
+    if (state.authenticated) {
+      openOccurrenceFromExternal(target);
+    }
+  }).catch((error) => {
+    console.error("注册桌面组件点击监听失败", error);
+  });
+}
+
+function setReminderMode(mode) {
+  for (const input of elements.reminderModeInputs) {
+    input.checked = input.value === mode;
+  }
+  updateReminderUi();
+}
+
 function updateReminderUi() {
   if (!nativeApp) {
     elements.reminderField.hidden = true;
     return;
   }
 
-  const enabled = elements.reminderEnabled.checked;
+  const enabled = currentReminderMode() !== "none";
   elements.reminderMinutesField.classList.toggle(
     "is-disabled",
     !enabled,
@@ -413,29 +525,58 @@ function updateAppAccess() {
 function configurePlatformControls() {
   document.body.classList.toggle("is-native", nativeApp);
   document.body.classList.toggle("is-web", !nativeApp);
+  elements.webPreviewBanner.hidden = nativeApp;
   elements.androidDownloadButton.hidden = nativeApp;
   elements.webExportButton.hidden = nativeApp;
   elements.accountButton.hidden = true;
   elements.reminderField.hidden = !nativeApp;
 }
 
-function handleNotificationAction({ seriesId, occurrenceDate }) {
+function openOccurrenceFromExternal({ seriesId, date, originalDate }) {
   if (!state.authenticated) {
     return;
   }
 
   const series = state.events.find((event) => event.id === seriesId);
-  if (!series || getOccurrenceIndex(series, occurrenceDate) === null) {
+  if (!series || getOccurrenceIndex(series, originalDate) === null) {
     showToast("这条提醒对应的活动已不存在");
     return;
   }
 
-  state.selectedDate = occurrenceDate;
-  state.monthCursor = startOfMonth(occurrenceDate);
+  const occurrences = occurrencesOnDate(state.events, date);
+  const occurrence = occurrences.find(
+    (item) =>
+      item.series.id === seriesId && item.originalDate === originalDate,
+  );
+  state.selectedDate = date;
+  state.monthCursor = startOfMonth(date);
   state.view = "day";
   state.autoScrollDay = true;
-  state.dayScrollTarget = timeToMinutes(series.startTime) - 60;
+  state.dayScrollTarget =
+    timeToMinutes(occurrence?.series.startTime ?? series.startTime) - 60;
   render({ scrollTargetMinutes: state.dayScrollTarget });
+}
+
+function handleNotificationAction({ seriesId, occurrenceDate, effectiveDate }) {
+  openOccurrenceFromExternal({
+    seriesId,
+    date: effectiveDate || occurrenceDate,
+    originalDate: occurrenceDate,
+  });
+}
+
+async function handleWidgetLaunch() {
+  if (!nativeApp || !state.authenticated) {
+    return;
+  }
+  try {
+    const target = await consumeWidgetLaunch();
+    if (target) {
+      openOccurrenceFromExternal(target);
+    }
+  } catch (error) {
+    console.error("读取桌面组件入口失败", error);
+  }
 }
 
 async function handleAuthSubmit(event) {
@@ -484,6 +625,8 @@ async function handleAuthSubmit(event) {
     }
 
     void refreshNativeNotifications();
+    void syncNativeWidgetSnapshot(state.events);
+    void handleWidgetLaunch();
   } catch (error) {
     elements.authError.textContent = error.message;
     elements.authError.hidden = false;
@@ -498,9 +641,43 @@ function openAccountDialog() {
   }
 
   elements.accountName.textContent = state.account.username;
+  renderBackupStatus();
   renderNotificationStatus();
   elements.accountDialog.showModal();
   void refreshNativeNotifications();
+}
+
+function formatStoredTime(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) {
+    return "尚未手动导出";
+  }
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${String(
+    date.getHours(),
+  ).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function renderBackupStatus() {
+  if (!nativeApp) {
+    elements.backupStatusText.textContent = "";
+    return;
+  }
+  const lastExport = readLastManualExport();
+  if (shouldRemindBackup(lastExport)) {
+    elements.backupStatusText.textContent =
+      `建议尽快导出一份活动 JSON。上次手动导出：${formatStoredTime(lastExport)}。`;
+    elements.backupStatusText.classList.add("is-warning");
+  } else {
+    elements.backupStatusText.textContent =
+      `上次手动导出：${formatStoredTime(lastExport)}。`;
+    elements.backupStatusText.classList.remove("is-warning");
+  }
+}
+
+function snapshotBefore(reason) {
+  if (nativeApp && state.events.length > 0) {
+    addRecoveryPoint(state.events, reason);
+  }
 }
 
 function logout() {
@@ -511,6 +688,7 @@ function logout() {
   state.authenticated = false;
   persistEvents();
   void clearScheduledNotifications();
+  void clearNativeWidgetSnapshot();
   elements.accountDialog.close();
   updateAppAccess();
 }
@@ -561,7 +739,9 @@ async function confirmAccountReset() {
 
   try {
     removeNativeState();
+    clearRecoveryPoints();
     await clearScheduledNotifications();
+    await clearNativeWidgetSnapshot();
     state.account = null;
     state.authenticated = false;
     state.events = [];
@@ -607,6 +787,8 @@ async function exportActivities() {
       if (!shared) {
         throw new Error("当前设备无法打开系统分享面板");
       }
+      markManualExport();
+      renderBackupStatus();
       showToast("已打开备份分享面板");
     } else {
       downloadTextFile(filename, contents);
@@ -643,8 +825,11 @@ async function handleImportFile(event) {
     }
 
     state.pendingImportEvents = backup.events;
+    const incoming = summarizeEvents(backup.events);
     elements.importDialogMessage.textContent =
-      `备份包含 ${backup.eventCount} 项活动。导入后会替换当前 ${state.events.length} 项活动，账户和密码不会改变。`;
+      `将用 ${backup.eventCount} 项活动替换当前 ${state.events.length} 项活动。` +
+      `导入内容含 ${incoming.notificationCount} 个通知、${incoming.alarmCount} 个闹钟、` +
+      `${incoming.pausedCount} 个暂停活动和 ${incoming.overrideCount} 次单次调整。账户与密码不会改变。`;
     elements.importDialog.showModal();
   } catch (error) {
     showToast(error.message || "无法读取备份文件");
@@ -657,6 +842,7 @@ function confirmImport() {
     return;
   }
 
+  snapshotBefore("导入活动前");
   state.events = state.pendingImportEvents;
   state.pendingImportEvents = null;
   persistEvents();
@@ -666,6 +852,93 @@ function confirmImport() {
   state.autoScrollDay = true;
   render();
   showToast("活动备份已导入");
+}
+
+function renderRecoveryDialog() {
+  const points = readRecoveryPoints();
+  const fragment = document.createDocumentFragment();
+
+  if (points.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "recovery-empty";
+    empty.textContent = "还没有自动恢复点。";
+    fragment.append(empty);
+  } else {
+    for (const point of points) {
+      const row = document.createElement("div");
+      const copy = document.createElement("span");
+      const title = document.createElement("strong");
+      const detail = document.createElement("small");
+      const restore = document.createElement("button");
+      row.className = "recovery-row";
+      title.textContent = point.reason;
+      detail.textContent = `${formatStoredTime(point.createdAt)} · ${point.events.length} 项活动`;
+      restore.type = "button";
+      restore.className = "secondary-button";
+      restore.textContent = "恢复";
+      restore.addEventListener("click", () => {
+        snapshotBefore("恢复活动前");
+        state.events = point.events;
+        persistEvents();
+        elements.recoveryDialog.close();
+        state.view = "day";
+        state.selectedDate = todayISO();
+        state.autoScrollDay = true;
+        render();
+        showToast("已恢复本地活动");
+      });
+      copy.append(title, detail);
+      row.append(copy, restore);
+      fragment.append(row);
+    }
+  }
+
+  elements.recoveryList.replaceChildren(fragment);
+}
+
+async function handleUpdateCheck() {
+  elements.checkUpdateButton.disabled = true;
+  elements.updateStatusText.hidden = false;
+  elements.updateStatusText.textContent = "正在检查最新版本…";
+
+  try {
+    const result = await checkForUpdate({
+      currentVersionCode: APP_VERSION_CODE,
+    });
+    if (result.state === "latest") {
+      elements.updateStatusText.textContent =
+        `当前已是最新版 v${APP_VERSION}。`;
+      return;
+    }
+
+    state.pendingUpdate = result.manifest;
+    elements.updateDialogTitle.textContent =
+      `发现 v${result.manifest.versionName}`;
+    elements.updateDialogMessage.textContent =
+      `当前版本 v${APP_VERSION}。下载新 APK 后在浏览器中覆盖安装，账户和活动会保留。`;
+    elements.updateNotes.replaceChildren(
+      ...result.manifest.notes.map((note) => {
+        const item = document.createElement("li");
+        item.textContent = note;
+        return item;
+      }),
+    );
+    elements.updateDialog.showModal();
+  } catch (error) {
+    elements.updateStatusText.textContent =
+      `暂时无法检查更新：${error.message || "请检查网络后重试"}。`;
+  } finally {
+    elements.checkUpdateButton.disabled = false;
+  }
+}
+
+async function openExternalUrl(url) {
+  const browser = globalThis.DailyRouteNative?.Browser;
+  if (browser?.open) {
+    await browser.open({ url });
+    return;
+  }
+  window.open(url, "_blank", "noopener");
 }
 
 function buildTimeLabels() {
@@ -849,7 +1122,10 @@ function renderTimeline(occurrences, isToday) {
 
     button.append(name, time);
     button.addEventListener("click", () => {
-      openEditDialog(item.occurrence.series, state.selectedDate);
+      openEditDialog(
+        item.occurrence.originalSeries,
+        item.occurrence.originalDate,
+      );
     });
     fragment.append(button);
   }
@@ -1019,7 +1295,10 @@ function renderWeek(window) {
         name.textContent = occurrence.series.title;
         eventButton.append(time, name);
         eventButton.addEventListener("click", () => {
-          openEditDialog(occurrence.series, date);
+          openEditDialog(
+            occurrence.originalSeries,
+            occurrence.originalDate,
+          );
         });
         events.append(eventButton);
       }
@@ -1170,21 +1449,46 @@ function formatRecurrenceRule(series) {
   return `每 ${series.repeatEvery} 天 · ${count}`;
 }
 
+function reminderLabel(series) {
+  if (series.reminderMode === "alarm") {
+    return `闹钟 · 提前 ${series.reminderMinutesBefore} 分钟`;
+  }
+  if (series.reminderMode === "notification") {
+    return `通知 · 提前 ${series.reminderMinutesBefore} 分钟`;
+  }
+  return "";
+}
+
+function activityRuleText(series) {
+  const parts = [formatRecurrenceRule(series)];
+  if (series.occurrenceOverrides.length > 0) {
+    parts.push(`含 ${series.occurrenceOverrides.length} 次单次调整`);
+  }
+  const reminder = reminderLabel(series);
+  if (reminder && nativeApp) {
+    parts.push(reminder);
+  }
+  return parts.join(" · ");
+}
+
 function renderActivities(window) {
   const today = window.startDate;
   const groups = state.events.map((series) => {
+    if (isSeriesPaused(series)) {
+      return { series, state: "paused" };
+    }
     const future = occurrencesBetween([series], today, window.endDate);
     if (future.length > 0) {
       return {
         series,
-        active: true,
+        state: "active",
         next: future[0],
       };
     }
 
     return {
       series,
-      active: false,
+      state: "inactive",
       lastDate: lastOccurrenceOnOrBefore(
         series,
         addDays(today, -1),
@@ -1192,7 +1496,7 @@ function renderActivities(window) {
     };
   });
   const active = groups
-    .filter((group) => group.active)
+    .filter((group) => group.state === "active")
     .sort((left, right) => {
       const dateDifference = left.next.date.localeCompare(right.next.date);
       if (dateDifference !== 0) {
@@ -1205,12 +1509,17 @@ function renderActivities(window) {
       );
     });
   const inactive = groups
-    .filter((group) => !group.active)
+    .filter((group) => group.state === "inactive")
     .sort((left, right) => {
       const leftDate = left.lastDate ?? left.series.date;
       const rightDate = right.lastDate ?? right.series.date;
       return rightDate.localeCompare(leftDate);
     });
+  const paused = groups
+    .filter((group) => group.state === "paused")
+    .sort((left, right) =>
+      left.series.title.localeCompare(right.series.title, "zh-CN"),
+    );
   const query = state.activityQuery.trim().toLocaleLowerCase("zh-CN");
   const filteredActive = active.filter((group) =>
     group.series.title.toLocaleLowerCase("zh-CN").includes(query),
@@ -1218,20 +1527,27 @@ function renderActivities(window) {
   const filteredInactive = inactive.filter((group) =>
     group.series.title.toLocaleLowerCase("zh-CN").includes(query),
   );
+  const filteredPaused = paused.filter((group) =>
+    group.series.title.toLocaleLowerCase("zh-CN").includes(query),
+  );
 
   elements.viewKicker.textContent = "活动";
   elements.viewTitle.textContent = "活动项目";
   elements.viewSummary.textContent = query
-    ? `找到 ${filteredActive.length + filteredInactive.length} 个活动`
-    : `${active.length} 个进行中 · ${inactive.length} 个已结束`;
+    ? `找到 ${filteredActive.length + filteredPaused.length + filteredInactive.length} 个活动`
+    : `${active.length} 个进行中 · ${paused.length} 个已暂停 · ${inactive.length} 个已结束`;
 
   elements.activeActivityCount.textContent = String(filteredActive.length);
+  elements.pausedActivityCount.textContent = String(filteredPaused.length);
   elements.inactiveActivityCount.textContent = String(filteredInactive.length);
   elements.activeActivityList.replaceChildren(
     ...filteredActive.map((group) => createActiveActivityRow(group)),
   );
   elements.inactiveActivityList.replaceChildren(
     ...filteredInactive.map((group) => createInactiveActivityRow(group)),
+  );
+  elements.pausedActivityList.replaceChildren(
+    ...filteredPaused.map((group) => createPausedActivityRow(group)),
   );
 
   if (filteredActive.length === 0) {
@@ -1244,10 +1560,18 @@ function renderActivities(window) {
       createListEmpty("暂无已结束的活动"),
     );
   }
+  if (filteredPaused.length === 0) {
+    elements.pausedActivityList.append(
+      createListEmpty("暂无已暂停的活动"),
+    );
+  }
 
   const noFilteredResults =
-    filteredActive.length === 0 && filteredInactive.length === 0;
+    filteredActive.length === 0 &&
+    filteredPaused.length === 0 &&
+    filteredInactive.length === 0;
   elements.activeActivitySection.hidden = noFilteredResults;
+  elements.pausedActivitySection.hidden = noFilteredResults;
   elements.inactiveActivitySection.hidden = noFilteredResults;
   elements.activityEmpty.hidden = !noFilteredResults;
 
@@ -1275,7 +1599,7 @@ function createActiveActivityRow(group) {
   name.className = "activity-name";
   name.textContent = group.series.title;
   rule.className = "activity-rule";
-  rule.textContent = formatRecurrenceRule(group.series);
+  rule.textContent = activityRuleText(group.series);
   next.className = "activity-next";
   next.textContent =
     `${formatShortDate(group.next.date)} ${group.series.startTime}`;
@@ -1284,9 +1608,55 @@ function createActiveActivityRow(group) {
   copy.append(name, rule);
   main.append(copy, next, chevron);
   main.addEventListener("click", () => {
-    openEditDialog(group.series, group.next.date);
+    openEditDialog(
+      group.next.originalSeries,
+      group.next.originalDate,
+      { preferFuture: true },
+    );
   });
   row.append(main);
+  return row;
+}
+
+function createPausedActivityRow(group) {
+  const row = document.createElement("div");
+  const main = document.createElement("div");
+  const copy = document.createElement("span");
+  const name = document.createElement("span");
+  const rule = document.createElement("span");
+  const resumeButton = document.createElement("button");
+  const deleteButton = document.createElement("button");
+
+  row.className = "activity-row is-paused";
+  main.className = "activity-main";
+  copy.className = "activity-copy";
+  name.className = "activity-name";
+  name.textContent = group.series.title;
+  rule.className = "activity-rule";
+  rule.textContent = activityRuleText(group.series);
+  resumeButton.type = "button";
+  resumeButton.className = "activity-resume";
+  resumeButton.textContent = "恢复";
+  resumeButton.addEventListener("click", () => {
+    snapshotBefore("恢复活动系列前");
+    state.events = resumeSeries(
+      state.events,
+      group.series.id,
+      todayISO(),
+    );
+    persistEvents();
+    render();
+    showToast("活动已恢复");
+  });
+  deleteButton.type = "button";
+  deleteButton.className = "activity-delete";
+  deleteButton.textContent = "删除";
+  deleteButton.addEventListener("click", () => {
+    openSeriesDeleteConfirmation(group.series);
+  });
+  copy.append(name, rule);
+  main.append(copy);
+  row.append(main, resumeButton, deleteButton);
   return row;
 }
 
@@ -1306,7 +1676,7 @@ function createInactiveActivityRow(group) {
   name.className = "activity-name";
   name.textContent = group.series.title;
   rule.className = "activity-rule";
-  rule.textContent = formatRecurrenceRule(group.series);
+  rule.textContent = activityRuleText(group.series);
   last.className = "activity-next";
   last.textContent = group.lastDate
     ? `最后 ${formatShortDate(group.lastDate)}`
@@ -1339,6 +1709,7 @@ function openAddDialog(date = state.selectedDate) {
 
   const defaults = defaultTimes(date);
   state.editing = null;
+  state.confirmedOverrideDiscard = false;
   elements.eventForm.reset();
   elements.eventDialogKicker.textContent = "新活动";
   elements.eventDialogTitle.textContent = "添加活动";
@@ -1350,19 +1721,29 @@ function openAddDialog(date = state.selectedDate) {
   elements.endTime.value = defaults.endTime;
   elements.repeatEvery.value = "1";
   elements.repeatCount.value = "1";
-  elements.reminderEnabled.checked = false;
   elements.reminderMinutesBefore.value = "5";
   elements.eventNotes.value = "";
+  setReminderMode("none");
   setRepeatMode("limited");
+  state.editing = null;
+  elements.editScopeField.hidden = true;
   updateReminderUi();
   elements.editScopeNote.hidden = true;
+  elements.pauseEventButton.hidden = true;
   elements.deleteEventButton.hidden = true;
+  for (const field of [
+    elements.repeatModeField,
+    elements.repeatEveryField,
+    elements.repeatCountField,
+  ]) {
+    field.hidden = false;
+  }
   elements.formError.hidden = true;
   elements.eventDialog.showModal();
   requestAnimationFrame(() => elements.eventName.focus());
 }
 
-function openEditDialog(series, occurrenceDate) {
+function openEditDialog(series, occurrenceDate, { preferFuture = false } = {}) {
   const window = getScheduleWindow();
   const remaining = remainingRepeatCount(series, occurrenceDate);
   if (getOccurrenceIndex(series, occurrenceDate) === null) {
@@ -1373,21 +1754,30 @@ function openEditDialog(series, occurrenceDate) {
   state.editing = {
     seriesId: series.id,
     occurrenceDate,
+    scope: preferFuture ? "future" : "single",
   };
+  state.confirmedOverrideDiscard = false;
+
+  const occurrence = occurrencesBetween(
+    [series],
+    window.startDate,
+    window.endDate,
+  ).find((item) => item.originalDate === occurrenceDate);
+  const displaySeries = occurrence?.series ?? series;
 
   elements.eventForm.reset();
-  elements.eventDialogKicker.textContent = "本次活动及以后";
+  elements.eventDialogKicker.textContent = "编辑活动";
   elements.eventDialogTitle.textContent = "编辑活动";
-  elements.eventName.value = series.title;
-  elements.eventDate.min = occurrenceDate;
+  elements.eventName.value = displaySeries.title;
+  elements.eventDate.min = window.startDate;
   elements.eventDate.max = window.endDate;
-  elements.eventDate.value = occurrenceDate;
-  elements.startTime.value = series.startTime;
-  elements.endTime.value = series.endTime;
+  elements.eventDate.value = displaySeries.date;
+  elements.startTime.value = displaySeries.startTime;
+  elements.endTime.value = displaySeries.endTime;
   elements.repeatEvery.value = String(series.repeatEvery);
-  elements.reminderEnabled.checked = series.reminderEnabled === true;
+  setReminderMode(displaySeries.reminderMode);
   elements.reminderMinutesBefore.value = String(
-    series.reminderMinutesBefore ?? 5,
+    displaySeries.reminderMinutesBefore ?? 5,
   );
 
   if (remaining === null) {
@@ -1398,13 +1788,58 @@ function openEditDialog(series, occurrenceDate) {
     setRepeatMode("limited");
   }
 
-  elements.eventNotes.value = series.notes ?? "";
+  elements.eventNotes.value = displaySeries.notes ?? "";
+  setEditScope(state.editing.scope);
   updateReminderUi();
+  elements.editScopeField.hidden = false;
   elements.editScopeNote.hidden = false;
+  elements.pauseEventButton.hidden = false;
   elements.deleteEventButton.hidden = false;
   elements.formError.hidden = true;
   elements.eventDialog.showModal();
   requestAnimationFrame(() => elements.eventName.focus());
+}
+
+function setEditScope(scope) {
+  if (state.editing) {
+    state.editing.scope = scope;
+  }
+  for (const input of elements.editScopeInputs) {
+    input.checked = input.value === scope;
+  }
+  updateEditScopeUi();
+}
+
+function currentEditScope() {
+  return (
+    [...elements.editScopeInputs].find((input) => input.checked)?.value ??
+    "single"
+  );
+}
+
+function updateEditScopeUi() {
+  if (!state.editing) {
+    return;
+  }
+
+  const single = currentEditScope() === "single";
+  state.editing.scope = currentEditScope();
+  for (const field of [
+    elements.repeatModeField,
+    elements.repeatEveryField,
+    elements.repeatCountField,
+  ]) {
+    field.hidden = single;
+  }
+  if (!single) {
+    updateRepeatModeUI();
+  }
+  elements.eventDate.min = single
+    ? getScheduleWindow().startDate
+    : state.editing.occurrenceDate;
+  elements.editScopeNote.textContent = single
+    ? "只修改所选这一次；原日期会被跳过，其他安排保持不变。"
+    : "保存后修改本次及以后，之前的安排保持不变；仍有效的单次调整会保留。";
 }
 
 function setRepeatMode(mode) {
@@ -1439,7 +1874,7 @@ function readFormInput() {
       currentRepeatMode() === "infinite"
         ? null
         : Number(elements.repeatCount.value),
-    reminderEnabled: nativeApp && elements.reminderEnabled.checked,
+    reminderMode: nativeApp ? currentReminderMode() : "none",
     reminderMinutesBefore:
       elements.reminderMinutesBefore.value === ""
         ? null
@@ -1450,16 +1885,25 @@ function readFormInput() {
 
 async function handleReminderToggle() {
   updateReminderUi();
-  if (!nativeApp || !elements.reminderEnabled.checked) {
+  if (!nativeApp || currentReminderMode() === "none") {
     return;
   }
 
   try {
-    state.notificationStatus = await requestNotificationPermission();
-    renderNotificationStatus();
-    if (!state.notificationStatus.granted) {
+    const permission = await requestNotificationPermission();
+    if (!permission.granted) {
       showToast("通知权限未开启，提醒可能无法送达");
     }
+    if (currentReminderMode() === "alarm") {
+      const currentExact = await getExactAlarmPermissionState();
+      const exact = currentExact.granted
+        ? currentExact
+        : await requestExactAlarmPermission();
+      if (!exact.granted) {
+        showToast("精确闹钟权限未开启，保存后将按普通通知降级");
+      }
+    }
+    await refreshNativeNotifications();
   } catch (error) {
     console.error("请求通知权限失败", error);
     showToast("无法请求通知权限，请检查系统设置");
@@ -1470,7 +1914,11 @@ function handleFormSubmit(event) {
   event.preventDefault();
   const window = getScheduleWindow();
   const input = readFormInput();
-  const minimumDate = state.editing?.occurrenceDate ?? window.startDate;
+  const singleEdit =
+    state.editing && currentEditScope() === "single";
+  const minimumDate = singleEdit
+    ? window.startDate
+    : state.editing?.occurrenceDate ?? window.startDate;
   const error = validateActivityInput(input, {
     ...window,
     minimumDate,
@@ -1486,10 +1934,15 @@ function handleFormSubmit(event) {
   const editingSeries = state.editing
     ? state.events.find((event) => event.id === state.editing.seriesId)
     : null;
-  const candidate = seriesFromInput(input, {
+  const candidate = seriesFromInput(
+    singleEdit
+      ? { ...input, repeatEvery: 1, repeatCount: 1 }
+      : input,
+    {
     id: editingSeries?.id,
     createdAt: editingSeries?.createdAt,
-  });
+    },
+  );
 
   if (!candidate) {
     elements.formError.textContent = "活动内容不完整，请重新检查";
@@ -1502,7 +1955,12 @@ function handleFormSubmit(event) {
     candidate,
     window.startDate,
     window.endDate,
-    state.editing?.seriesId ?? null,
+    singleEdit
+      ? {
+          seriesId: state.editing.seriesId,
+          originalDate: state.editing.occurrenceDate,
+        }
+      : state.editing?.seriesId ?? null,
   );
   if (conflict) {
     elements.formError.textContent =
@@ -1511,14 +1969,66 @@ function handleFormSubmit(event) {
     return;
   }
 
-  if (state.editing) {
+  if (singleEdit) {
     try {
-      state.events = splitSeriesForEdit(
+      snapshotBefore("单次修改活动前");
+      const nextEvents = applyOccurrenceOverride(
         state.events,
         state.editing.seriesId,
         state.editing.occurrenceDate,
         input,
       );
+      const finalConflict = findConflictWithinRange(
+        nextEvents,
+        window.startDate,
+        window.endDate,
+      );
+      if (finalConflict) {
+        throw new Error(
+          `调整后与「${finalConflict.secondSeries.title}」时间重叠，请重新选择日期和时间`,
+        );
+      }
+      state.events = nextEvents;
+      showToast("已修改这一次活动");
+    } catch (saveError) {
+      elements.formError.textContent = saveError.message;
+      elements.formError.hidden = false;
+      return;
+    }
+  } else if (state.editing) {
+    const unmatched = unmatchedOverridesForSeriesEdit(
+      editingSeries,
+      state.editing.occurrenceDate,
+      input,
+    );
+    if (unmatched.length > 0 && !state.confirmedOverrideDiscard) {
+      state.pendingSeriesEdit = { input, window };
+      elements.overrideDiscardMessage.textContent =
+        `${unmatched.length} 次单次调整不再对应修改后的发生日期：` +
+        `${unmatched.map((item) => formatShortDate(item.occurrenceDate)).join("、")}。` +
+        "继续保存会移除这些调整。";
+      elements.overrideDiscardDialog.showModal();
+      return;
+    }
+    try {
+      snapshotBefore("修改活动系列前");
+      const nextEvents = splitSeriesForEdit(
+        state.events,
+        state.editing.seriesId,
+        state.editing.occurrenceDate,
+        input,
+      );
+      const finalConflict = findConflictWithinRange(
+        nextEvents,
+        window.startDate,
+        window.endDate,
+      );
+      if (finalConflict) {
+        throw new Error(
+          `修改后与「${finalConflict.secondSeries.title}」时间重叠，请调整重复规则或时间`,
+        );
+      }
+      state.events = nextEvents;
       showToast("已更新本次及以后的活动");
     } catch (saveError) {
       elements.formError.textContent = saveError.message;
@@ -1536,9 +2046,22 @@ function handleFormSubmit(event) {
   state.autoScrollDay = true;
   state.dayScrollTarget = eventStartMinutes - 60;
   state.editing = null;
+  state.confirmedOverrideDiscard = false;
   persistEvents();
   elements.eventDialog.close();
   render();
+}
+
+function confirmOverrideDiscard() {
+  const pending = state.pendingSeriesEdit;
+  if (!pending || !state.editing) {
+    elements.overrideDiscardDialog.close();
+    return;
+  }
+  state.confirmedOverrideDiscard = true;
+  elements.overrideDiscardDialog.close();
+  elements.eventForm.requestSubmit();
+  state.pendingSeriesEdit = null;
 }
 
 function openDeleteConfirmation() {
@@ -1588,6 +2111,7 @@ function confirmDelete() {
   }
 
   try {
+    snapshotBefore("删除活动前");
     if (state.pendingDelete.kind === "series") {
       state.events = state.events.filter(
         (event) => event.id !== state.pendingDelete.seriesId,
@@ -1608,6 +2132,55 @@ function confirmDelete() {
   } catch (error) {
     state.pendingDelete = null;
     elements.deleteDialog.close();
+    showToast(error.message);
+  }
+}
+
+function openPauseConfirmation() {
+  if (!state.editing) {
+    return;
+  }
+  const series = state.events.find(
+    (event) => event.id === state.editing.seriesId,
+  );
+  if (!series || getOccurrenceIndex(series, state.editing.occurrenceDate) === null) {
+    showToast("找不到要暂停的活动");
+    return;
+  }
+
+  state.pendingPause = {
+    seriesId: state.editing.seriesId,
+    occurrenceDate: state.editing.occurrenceDate,
+  };
+  elements.pauseDialogMessage.textContent =
+    `将从 ${formatShortDate(state.editing.occurrenceDate)} 起暂停「${series.title}」。` +
+    "暂停期间不提醒，也不消耗有限次数；恢复后会从下一个原周期日期继续。";
+  elements.eventDialog.close();
+  elements.pauseDialog.showModal();
+}
+
+function confirmPause() {
+  if (!state.pendingPause) {
+    elements.pauseDialog.close();
+    return;
+  }
+
+  try {
+    snapshotBefore("暂停活动前");
+    state.events = pauseSeries(
+      state.events,
+      state.pendingPause.seriesId,
+      state.pendingPause.occurrenceDate,
+    );
+    state.pendingPause = null;
+    state.editing = null;
+    persistEvents();
+    elements.pauseDialog.close();
+    render();
+    showToast("活动已暂停");
+  } catch (error) {
+    state.pendingPause = null;
+    elements.pauseDialog.close();
     showToast(error.message);
   }
 }
@@ -1658,6 +2231,57 @@ function bindEvents() {
     "click",
     openImportFilePicker,
   );
+  elements.recoveryButton.addEventListener("click", () => {
+    renderRecoveryDialog();
+    elements.recoveryDialog.showModal();
+  });
+  elements.closeRecoveryDialog.addEventListener("click", () => {
+    elements.recoveryDialog.close();
+  });
+  elements.checkUpdateButton.addEventListener("click", handleUpdateCheck);
+  elements.closeUpdateButton.addEventListener("click", () => {
+    elements.updateDialog.close();
+  });
+  elements.openUpdateButton.addEventListener("click", () => {
+    if (state.pendingUpdate?.apkUrl) {
+      void openExternalUrl(state.pendingUpdate.apkUrl);
+    }
+    elements.updateDialog.close();
+  });
+  elements.testNotificationButton.addEventListener("click", async () => {
+    try {
+      await scheduleTestReminder("notification");
+      showToast("测试通知将在约 5 秒后发送");
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+  elements.testAlarmButton.addEventListener("click", async () => {
+    try {
+      const currentExact = await getExactAlarmPermissionState();
+      const exact = currentExact.granted
+        ? currentExact
+        : await requestExactAlarmPermission();
+      const result = await scheduleTestReminder("alarm");
+      showToast(
+        result.exact
+          ? "测试闹钟将在约 5 秒后发送"
+          : exact.granted
+            ? "测试闹钟安排失败，已尝试降级"
+            : "精确闹钟未授权，本次按普通通知测试",
+      );
+      void refreshNativeNotifications();
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+  elements.openAlarmSettingsButton.addEventListener("click", async () => {
+    await requestExactAlarmPermission();
+    await refreshNativeNotifications();
+    if (!elements.accountDialog.open) {
+      elements.accountDialog.showModal();
+    }
+  });
   elements.importFileInput.addEventListener(
     "change",
     handleImportFile,
@@ -1761,18 +2385,40 @@ function bindEvents() {
   }
 
   elements.closeEventDialog.addEventListener("click", () => {
+    state.confirmedOverrideDiscard = false;
     elements.eventDialog.close();
   });
   elements.cancelEventButton.addEventListener("click", () => {
+    state.confirmedOverrideDiscard = false;
     elements.eventDialog.close();
   });
   elements.eventForm.addEventListener("submit", handleFormSubmit);
   elements.repeatModeInputs.forEach((input) => {
     input.addEventListener("change", updateRepeatModeUI);
   });
-  elements.reminderEnabled.addEventListener(
-    "change",
-    handleReminderToggle,
+  elements.editScopeInputs.forEach((input) => {
+    input.addEventListener("change", updateEditScopeUi);
+  });
+  elements.reminderModeInputs.forEach((input) => {
+    input.addEventListener("change", handleReminderToggle);
+  });
+  elements.pauseEventButton.addEventListener(
+    "click",
+    openPauseConfirmation,
+  );
+  elements.cancelPauseButton.addEventListener("click", () => {
+    state.pendingPause = null;
+    elements.pauseDialog.close();
+  });
+  elements.confirmPauseButton.addEventListener("click", confirmPause);
+  elements.cancelOverrideDiscardButton.addEventListener("click", () => {
+    state.pendingSeriesEdit = null;
+    state.confirmedOverrideDiscard = false;
+    elements.overrideDiscardDialog.close();
+  });
+  elements.confirmOverrideDiscardButton.addEventListener(
+    "click",
+    confirmOverrideDiscard,
   );
   elements.deleteEventButton.addEventListener(
     "click",
@@ -1825,6 +2471,8 @@ function bindEvents() {
     if (!document.hidden && (!nativeApp || state.authenticated)) {
       render();
       void refreshNativeNotifications();
+      void syncNativeWidgetSnapshot(state.events);
+      void handleWidgetLaunch();
     }
   });
 }
@@ -1865,5 +2513,19 @@ if (nativeApp) {
 }
 if (nativeApp && state.authenticated) {
   void refreshNativeNotifications();
+  void syncNativeWidgetSnapshot(state.events);
+  void handleWidgetLaunch();
+}
+
+if (nativeApp) {
+  globalThis.DailyRouteNative?.App?.addListener?.(
+    "appStateChange",
+    ({ isActive }) => {
+      if (isActive && state.authenticated) {
+        void refreshNativeNotifications();
+        void handleWidgetLaunch();
+      }
+    },
+  );
 }
 

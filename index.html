@@ -151,6 +151,11 @@
         </div>
       </header>
 
+      <div class="web-preview-banner" id="webPreviewBanner">
+        <strong>网页版 · 安卓功能预览</strong>
+        <span>活动可继续离线编辑；提醒、账户、桌面组件与更新检查请使用安卓版。</span>
+      </div>
+
       <main class="main-content">
         <section class="day-view" id="dayView" aria-labelledby="viewTitle">
           <div class="date-navigation">
@@ -317,6 +322,14 @@
               <div class="activity-list" id="activeActivityList"></div>
             </section>
 
+            <section class="activity-section" id="pausedActivitySection">
+              <div class="section-heading">
+                <h2>已暂停</h2>
+                <span id="pausedActivityCount">0</span>
+              </div>
+              <div class="activity-list" id="pausedActivityList"></div>
+            </section>
+
             <section class="activity-section" id="inactiveActivitySection">
               <div class="section-heading">
                 <h2>已结束</h2>
@@ -445,7 +458,30 @@
             <input id="endTime" name="endTime" type="time" required />
           </label>
 
-          <div class="field field-full">
+          <div class="field field-full" id="editScopeField" hidden>
+            <span class="field-label">修改范围</span>
+            <div class="segmented-control" role="radiogroup" aria-label="修改范围">
+              <label>
+                <input
+                  type="radio"
+                  name="editScope"
+                  value="single"
+                  checked
+                />
+                <span>只修改这一次</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="editScope"
+                  value="future"
+                />
+                <span>本次及以后</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="field field-full" id="repeatModeField">
             <span class="field-label">重复方式</span>
             <div class="segmented-control" role="radiogroup" aria-label="重复方式">
               <label>
@@ -464,7 +500,7 @@
             </div>
           </div>
 
-          <label class="field">
+          <label class="field" id="repeatEveryField">
             <span>重复间隔</span>
             <span class="input-with-suffix">
               <input
@@ -505,13 +541,30 @@
             id="reminderField"
             hidden
           >
-            <label class="reminder-toggle">
-              <span>
-                <strong>活动提醒</strong>
-                <small>每次发生提醒一次</small>
-              </span>
-              <input id="reminderEnabled" type="checkbox" />
-            </label>
+            <span class="field-label">活动提醒</span>
+            <div class="reminder-options" role="radiogroup" aria-label="活动提醒方式">
+              <label>
+                <input type="radio" name="reminderMode" value="none" checked />
+                <span>
+                  <strong>不提醒</strong>
+                  <small>静默安排</small>
+                </span>
+              </label>
+              <label>
+                <input type="radio" name="reminderMode" value="notification" />
+                <span>
+                  <strong>通知</strong>
+                  <small>可能延迟</small>
+                </span>
+              </label>
+              <label>
+                <input type="radio" name="reminderMode" value="alarm" />
+                <span>
+                  <strong>闹钟</strong>
+                  <small>尽量准点</small>
+                </span>
+              </label>
+            </div>
             <label class="reminder-time" id="reminderMinutesField">
               <span>提前</span>
               <input
@@ -526,7 +579,7 @@
               <span>分钟</span>
             </label>
             <p class="reminder-status" id="reminderStatusNote">
-              安卓系统可能将提醒延迟几分钟。
+              普通通知可能延迟；闹钟需要系统“闹钟和提醒”权限。
             </p>
           </div>
 
@@ -542,12 +595,20 @@
           </label>
 
           <p class="edit-scope-note" id="editScopeNote" hidden>
-            保存后修改本次及以后的活动，之前的安排保持不变。
+            只修改所选这一次，其他安排保持不变。
           </p>
           <p class="form-error" id="formError" role="alert" hidden></p>
         </div>
 
         <div class="sheet-footer">
+          <button
+            class="danger-button"
+            id="pauseEventButton"
+            type="button"
+            hidden
+          >
+            暂停活动
+          </button>
           <button
             class="danger-button"
             id="deleteEventButton"
@@ -582,6 +643,38 @@
       </div>
     </dialog>
 
+    <dialog class="confirm-dialog" id="pauseDialog">
+      <div class="confirm-sheet">
+        <h2>暂停整个活动？</h2>
+        <p id="pauseDialogMessage">
+          从所选这一次起不再发生；恢复后不会补上暂停期间错过的次数。
+        </p>
+        <div class="confirm-actions">
+          <button class="secondary-button" id="cancelPauseButton" type="button">
+            取消
+          </button>
+          <button class="danger-solid-button" id="confirmPauseButton" type="button">
+            暂停活动
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="overrideDiscardDialog">
+      <div class="confirm-sheet">
+        <h2>部分单次调整将失效</h2>
+        <p id="overrideDiscardMessage"></p>
+        <div class="confirm-actions">
+          <button class="secondary-button" id="cancelOverrideDiscardButton" type="button">
+            返回检查
+          </button>
+          <button class="danger-solid-button" id="confirmOverrideDiscardButton" type="button">
+            继续修改
+          </button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog class="confirm-dialog" id="accountDialog">
       <div class="account-sheet">
         <div class="account-header">
@@ -603,6 +696,10 @@
         <p class="account-status" id="notificationPermissionText">
           正在检查通知权限…
         </p>
+        <p class="account-status compact-status" id="exactAlarmPermissionText">
+          正在检查精确闹钟权限…
+        </p>
+        <p class="account-backup-status" id="backupStatusText"></p>
         <div class="account-actions">
           <button class="secondary-button" id="changePasswordButton" type="button">
             修改密码
@@ -613,8 +710,65 @@
           <button class="secondary-button" id="importDataButton" type="button">
             导入活动
           </button>
+          <button class="secondary-button" id="recoveryButton" type="button">
+            本地恢复点
+          </button>
+          <button class="secondary-button" id="checkUpdateButton" type="button">
+            检查更新
+          </button>
+          <button class="secondary-button" id="testNotificationButton" type="button">
+            测试通知
+          </button>
+          <button class="secondary-button" id="testAlarmButton" type="button">
+            测试闹钟
+          </button>
+          <button class="secondary-button compact-wide" id="openAlarmSettingsButton" type="button">
+            闹钟权限设置
+          </button>
           <button class="danger-button account-logout" id="logoutButton" type="button">
             退出登录
+          </button>
+        </div>
+        <p class="update-status" id="updateStatusText" hidden></p>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="recoveryDialog">
+      <div class="recovery-sheet">
+        <div class="account-header">
+          <div>
+            <p class="sheet-kicker">仅保存在本应用</p>
+            <h2>本地恢复点</h2>
+          </div>
+          <button
+            class="close-button"
+            id="closeRecoveryDialog"
+            type="button"
+            aria-label="关闭"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+        <p class="recovery-note">
+          最多保留 5 个自动恢复点。清除应用数据、卸载或换机后这些恢复点不会保留。
+        </p>
+        <div class="recovery-list" id="recoveryList"></div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="updateDialog">
+      <div class="confirm-sheet">
+        <h2 id="updateDialogTitle">发现新版本</h2>
+        <p id="updateDialogMessage"></p>
+        <ul class="update-notes" id="updateNotes"></ul>
+        <div class="confirm-actions">
+          <button class="secondary-button" id="closeUpdateButton" type="button">
+            稍后
+          </button>
+          <button class="primary-button" id="openUpdateButton" type="button">
+            浏览器下载
           </button>
         </div>
       </div>

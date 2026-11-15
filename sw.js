@@ -1,4 +1,4 @@
-const CACHE_NAME = "daily-route-v4";
+const CACHE_NAME = "daily-route-v5";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -9,8 +9,11 @@ const APP_SHELL = [
   "./backup.js",
   "./date-utils.js",
   "./native-files.js",
+  "./native-widget.js",
   "./notifications.js",
+  "./recovery.js",
   "./schedule.js",
+  "./update-check.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",
@@ -49,6 +52,11 @@ self.addEventListener("fetch", (event) => {
 
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) {
+    return;
+  }
+
+  if (requestUrl.pathname.endsWith("/update.json")) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
     return;
   }
 
