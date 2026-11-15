@@ -1419,6 +1419,13 @@ svg {
   line-height: 1.5;
 }
 
+.account-version {
+  margin: -4px 0 12px;
+  color: #8a94a4;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .account-backup-status.is-warning {
   color: #9a621d;
 }

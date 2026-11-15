@@ -1,4 +1,4 @@
-const CACHE_NAME = "daily-route-v6";
+const CACHE_NAME = "daily-route-v7";
 const APP_SHELL = [
   "./",
   "./index.html",

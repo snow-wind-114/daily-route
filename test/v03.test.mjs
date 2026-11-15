@@ -10,6 +10,8 @@ import { createBackup, parseBackup, summarizeEvents } from "../backup.js";
 import { buildWidgetSnapshot } from "../native-widget.js";
 import {
   buildReminderPlan,
+  getReminderChannelState,
+  scheduleTestReminder,
   syncScheduledNotifications,
 } from "../notifications.js";
 import {
@@ -392,6 +394,106 @@ test("alarm sync downgrades when exact alarm access is denied", async () => {
   assert.equal(status.downgraded, 1);
   assert.equal(scheduled[0].isExactNotification, false);
   assert.equal(scheduled[0].extra.exact, false);
+  delete globalThis.DailyRouteNative;
+});
+
+test("blocked alarm channel falls back to the normal notification channel", async () => {
+  const scheduled = [];
+  globalThis.DailyRouteNative = {
+    Capacitor: { isNativePlatform: () => true },
+    DailyRouteDevice: {
+      getReminderDiagnostics: async () => ({
+        notificationsEnabled: true,
+        exactAlarmGranted: true,
+        notificationChannel: { exists: true, importance: 4 },
+        alarmChannel: { exists: true, importance: 0 },
+      }),
+    },
+    LocalNotifications: {
+      checkPermissions: async () => ({ display: "granted" }),
+      checkExactNotificationSetting: async () => ({ exact_alarm: "granted" }),
+      getPending: async () => ({ notifications: [] }),
+      createChannel: async () => {},
+      schedule: async ({ notifications }) => scheduled.push(...notifications),
+    },
+  };
+
+  const channels = await getReminderChannelState();
+  assert.equal(channels.alarmChannelBlocked, true);
+  const status = await syncScheduledNotifications([
+    makeSeries({ reminderMode: "alarm", repeatCount: 1 }),
+  ]);
+  assert.equal(status.downgraded, 1);
+  assert.equal(scheduled[0].channelId, "daily-route-notifications-v1");
+  assert.equal(scheduled[0].isExactNotification, true);
+  delete globalThis.DailyRouteNative;
+});
+
+test("alarm test remains observable when exact access or alarm channel is unavailable", async () => {
+  const scheduled = [];
+  globalThis.DailyRouteNative = {
+    Capacitor: { isNativePlatform: () => true },
+    DailyRouteDevice: {
+      getReminderDiagnostics: async () => ({
+        notificationsEnabled: true,
+        exactAlarmGranted: false,
+        notificationChannel: { exists: true, importance: 4 },
+        alarmChannel: { exists: true, importance: 0 },
+      }),
+    },
+    LocalNotifications: {
+      checkPermissions: async () => ({ display: "granted" }),
+      checkExactNotificationSetting: async () => ({ exact_alarm: "denied" }),
+      createChannel: async () => {},
+      schedule: async ({ notifications }) => scheduled.push(...notifications),
+    },
+  };
+
+  const result = await scheduleTestReminder("alarm", { delaySeconds: 1 });
+  assert.equal(result.exact, false);
+  assert.equal(result.channelFallback, true);
+  assert.equal(result.downgraded, true);
+  assert.equal(scheduled[0].channelId, "daily-route-notifications-v1");
+  assert.equal(scheduled[0].isExactNotification, false);
+  delete globalThis.DailyRouteNative;
+});
+
+test("activity reminder sync never cancels an in-flight test notification", async () => {
+  const cancelled = [];
+  globalThis.DailyRouteNative = {
+    Capacitor: { isNativePlatform: () => true },
+    DailyRouteDevice: {
+      getReminderDiagnostics: async () => ({
+        notificationsEnabled: true,
+        exactAlarmGranted: true,
+        notificationChannel: { exists: true, importance: 4 },
+        alarmChannel: { exists: true, importance: 5 },
+      }),
+    },
+    LocalNotifications: {
+      checkPermissions: async () => ({ display: "granted" }),
+      checkExactNotificationSetting: async () => ({ exact_alarm: "granted" }),
+      getPending: async () => ({
+        notifications: [
+          {
+            id: 11,
+            extra: { kind: "daily-route-reminder", seriesId: "activity" },
+          },
+          {
+            id: 12,
+            extra: { kind: "daily-route-reminder", test: true },
+          },
+        ],
+      }),
+      cancel: async ({ notifications }) =>
+        cancelled.push(...notifications.map((item) => item.id)),
+      createChannel: async () => {},
+      schedule: async () => {},
+    },
+  };
+
+  await syncScheduledNotifications([]);
+  assert.deepEqual(cancelled, [11]);
   delete globalThis.DailyRouteNative;
 });
 

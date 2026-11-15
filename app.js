@@ -60,6 +60,7 @@ import {
   clearScheduledNotifications,
   getExactAlarmPermissionState,
   isNativeApp,
+  openReminderChannelSettings,
   registerNotificationActionListener,
   requestExactAlarmPermission,
   requestNotificationPermission,
@@ -83,8 +84,8 @@ import {
   syncNativeWidgetSnapshot,
 } from "./native-widget.js";
 
-const APP_VERSION = "0.3.1";
-const APP_VERSION_CODE = 4;
+const APP_VERSION = "0.3.2";
+const APP_VERSION_CODE = 5;
 const SLOT_HEIGHT = 44;
 const PIXELS_PER_MINUTE = SLOT_HEIGHT / 30;
 const nativeApp = isNativeApp();
@@ -191,6 +192,8 @@ const elements = {
   exactAlarmPermissionText: document.querySelector(
     "#exactAlarmPermissionText",
   ),
+  channelStatusText: document.querySelector("#channelStatusText"),
+  accountVersionText: document.querySelector("#accountVersionText"),
   backupStatusText: document.querySelector("#backupStatusText"),
   closeAccountDialog: document.querySelector("#closeAccountDialog"),
   changePasswordButton: document.querySelector("#changePasswordButton"),
@@ -200,6 +203,12 @@ const elements = {
   checkUpdateButton: document.querySelector("#checkUpdateButton"),
   testNotificationButton: document.querySelector("#testNotificationButton"),
   testAlarmButton: document.querySelector("#testAlarmButton"),
+  openNotificationSettingsButton: document.querySelector(
+    "#openNotificationSettingsButton",
+  ),
+  openAlarmChannelSettingsButton: document.querySelector(
+    "#openAlarmChannelSettingsButton",
+  ),
   openAlarmSettingsButton: document.querySelector("#openAlarmSettingsButton"),
   updateStatusText: document.querySelector("#updateStatusText"),
   logoutButton: document.querySelector("#logoutButton"),
@@ -377,6 +386,9 @@ function notificationStatusText(status) {
   if (!status?.supported) {
     return "当前设备未提供本地通知能力。";
   }
+  if (status.channelState?.notificationsEnabled === false) {
+    return "系统已关闭本应用通知；请在系统设置中重新允许通知。";
+  }
   if (status.display === "error") {
     return "提醒同步失败，请重新打开应用后再试。";
   }
@@ -400,6 +412,22 @@ function renderNotificationStatus() {
   elements.exactAlarmPermissionText.textContent = exactGranted
     ? "精确闹钟权限已开启，闹钟提醒会尽量准点触发。"
     : "精确闹钟权限未开启；选择闹钟的活动会按普通通知降级。";
+  const channels = state.notificationStatus?.channelState;
+  if (!channels) {
+    elements.channelStatusText.textContent = "正在检查通知通道…";
+  } else if (!channels.supported) {
+    elements.channelStatusText.textContent =
+      "当前系统无法读取通知通道状态；可用下方设置入口检查。";
+  } else if (channels.notificationChannelBlocked) {
+    elements.channelStatusText.textContent =
+      "「活动通知」通道已关闭，普通通知不会显示；请打开通知总设置。";
+  } else if (channels.alarmChannelBlocked) {
+    elements.channelStatusText.textContent =
+      "「活动闹钟」通道已关闭，闹钟会改用「活动通知」通道；请打开闹钟通道设置。";
+  } else {
+    elements.channelStatusText.textContent =
+      "「活动通知」与「活动闹钟」通道均已开启。";
+  }
 }
 
 async function refreshNativeNotifications() {
@@ -427,13 +455,6 @@ function currentReminderMode() {
     [...elements.reminderModeInputs].find((input) => input.checked)?.value ??
     "none"
   );
-  void registerWidgetLaunchListener((target) => {
-    if (state.authenticated) {
-      openOccurrenceFromExternal(target);
-    }
-  }).catch((error) => {
-    console.error("注册桌面组件点击监听失败", error);
-  });
 }
 
 function setReminderMode(mode) {
@@ -641,6 +662,7 @@ function openAccountDialog() {
   }
 
   elements.accountName.textContent = state.account.username;
+  elements.accountVersionText.textContent = `当前版本 v${APP_VERSION}`;
   renderBackupStatus();
   renderNotificationStatus();
   elements.accountDialog.showModal();
@@ -2258,19 +2280,28 @@ function bindEvents() {
   });
   elements.testAlarmButton.addEventListener("click", async () => {
     try {
-      const currentExact = await getExactAlarmPermissionState();
-      const exact = currentExact.granted
-        ? currentExact
-        : await requestExactAlarmPermission();
       const result = await scheduleTestReminder("alarm");
       showToast(
         result.exact
           ? "测试闹钟将在约 5 秒后发送"
-          : exact.granted
-            ? "测试闹钟安排失败，已尝试降级"
-            : "精确闹钟未授权，本次按普通通知测试",
+          : result.channelFallback
+            ? "闹钟通道已关闭，测试已改用普通通知发送"
+            : "精确闹钟未授权，测试已降级为普通通知",
       );
-      void refreshNativeNotifications();
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+  elements.openNotificationSettingsButton.addEventListener("click", async () => {
+    try {
+      await openReminderChannelSettings("app");
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+  elements.openAlarmChannelSettingsButton.addEventListener("click", async () => {
+    try {
+      await openReminderChannelSettings("alarm");
     } catch (error) {
       showToast(error.message);
     }
@@ -2518,6 +2549,13 @@ if (nativeApp && state.authenticated) {
 }
 
 if (nativeApp) {
+  void registerWidgetLaunchListener((target) => {
+    if (state.authenticated) {
+      openOccurrenceFromExternal(target);
+    }
+  }).catch((error) => {
+    console.error("注册桌面组件点击监听失败", error);
+  });
   globalThis.DailyRouteNative?.App?.addListener?.(
     "appStateChange",
     ({ isActive }) => {

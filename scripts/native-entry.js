@@ -9,12 +9,14 @@ import {
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { Share } from "@capacitor/share";
 const DailyRouteWidget = registerPlugin("DailyRouteWidget");
+const DailyRouteDevice = registerPlugin("DailyRouteDevice");
 
 globalThis.DailyRouteNative = {
   App,
   Browser,
   Capacitor,
   DailyRouteWidget,
+  DailyRouteDevice,
   Directory,
   Encoding,
   Filesystem,

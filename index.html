@@ -699,6 +699,10 @@
         <p class="account-status compact-status" id="exactAlarmPermissionText">
           正在检查精确闹钟权限…
         </p>
+        <p class="account-status compact-status" id="channelStatusText">
+          正在检查通知通道…
+        </p>
+        <p class="account-version" id="accountVersionText"></p>
         <p class="account-backup-status" id="backupStatusText"></p>
         <div class="account-actions">
           <button class="secondary-button" id="changePasswordButton" type="button">
@@ -722,8 +726,14 @@
           <button class="secondary-button" id="testAlarmButton" type="button">
             测试闹钟
           </button>
+          <button class="secondary-button" id="openNotificationSettingsButton" type="button">
+            通知总设置
+          </button>
+          <button class="secondary-button" id="openAlarmChannelSettingsButton" type="button">
+            闹钟通道设置
+          </button>
           <button class="secondary-button compact-wide" id="openAlarmSettingsButton" type="button">
-            闹钟权限设置
+            精确闹钟权限设置
           </button>
           <button class="danger-button account-logout" id="logoutButton" type="button">
             退出登录
