@@ -1,4 +1,15 @@
 artifacts/
 dist/
 daily-route-site.zip
+node_modules/
+www/
+android/.gradle/
+android/local.properties
+android/keystore.properties
+android/app/build/
+android/build/
+*.jks
+*.keystore
+*.aab
+*.apk
 

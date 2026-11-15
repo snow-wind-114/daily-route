@@ -17,25 +17,69 @@ import {
 } from "./date-utils.js";
 import {
   deleteOccurrenceAndFuture,
+  findConflictWithinRange,
   findScheduleConflict,
   getOccurrenceIndex,
   lastOccurrenceOnOrBefore,
-  makeStoragePayload,
   occupancyByDayBetween,
   occurrencesBetween,
   occurrencesOnDate,
-  readStoragePayload,
   remainingRepeatCount,
   seriesFromInput,
   splitSeriesForEdit,
   validateActivityInput,
 } from "./schedule.js";
+import {
+  createLocalAccount,
+  updateAccountPassword,
+  validateAccountInput,
+  verifyAccountPassword,
+} from "./account.js";
+import {
+  NATIVE_STORAGE_KEY,
+  WEB_STORAGE_KEY,
+  readNativeState,
+  readWebEvents,
+  removeNativeState,
+  writeNativeState,
+  writeWebEvents,
+} from "./app-state.js";
+import {
+  createBackup,
+  parseBackup,
+} from "./backup.js";
+import {
+  clearScheduledNotifications,
+  isNativeApp,
+  registerNotificationActionListener,
+  requestNotificationPermission,
+  syncScheduledNotifications,
+} from "./notifications.js";
+import { shareNativeBackup } from "./native-files.js";
 
-const STORAGE_KEY = "daily-route.storage.v1";
+const APP_VERSION = "0.2.0";
 const SLOT_HEIGHT = 44;
 const PIXELS_PER_MINUTE = SLOT_HEIGHT / 30;
+const nativeApp = isNativeApp();
+
+if (nativeApp) {
+  document.documentElement.classList.add("is-native");
+}
 
 const elements = {
+  appShell: document.querySelector("#appShell"),
+  authScreen: document.querySelector("#authScreen"),
+  authForm: document.querySelector("#authForm"),
+  authKicker: document.querySelector("#authKicker"),
+  authTitle: document.querySelector("#authTitle"),
+  authDescription: document.querySelector("#authDescription"),
+  authUsername: document.querySelector("#authUsername"),
+  authPassword: document.querySelector("#authPassword"),
+  authPasswordConfirm: document.querySelector("#authPasswordConfirm"),
+  authConfirmField: document.querySelector("#authConfirmField"),
+  authError: document.querySelector("#authError"),
+  authSubmitButton: document.querySelector("#authSubmitButton"),
+  forgotPasswordButton: document.querySelector("#forgotPasswordButton"),
   viewKicker: document.querySelector("#viewKicker"),
   viewTitle: document.querySelector("#viewTitle"),
   viewSummary: document.querySelector("#viewSummary"),
@@ -71,6 +115,9 @@ const elements = {
   activeActivityList: document.querySelector("#activeActivityList"),
   inactiveActivityList: document.querySelector("#inactiveActivityList"),
   activityEmpty: document.querySelector("#activityEmpty"),
+  androidDownloadButton: document.querySelector("#androidDownloadButton"),
+  webExportButton: document.querySelector("#webExportButton"),
+  accountButton: document.querySelector("#accountButton"),
   addTopButton: document.querySelector("#addTopButton"),
   addFab: document.querySelector("#addFab"),
   eventDialog: document.querySelector("#eventDialog"),
@@ -87,6 +134,11 @@ const elements = {
   repeatCount: document.querySelector("#repeatCount"),
   repeatCountField: document.querySelector("#repeatCountField"),
   repeatModeInputs: document.querySelectorAll('input[name="repeatMode"]'),
+  reminderField: document.querySelector("#reminderField"),
+  reminderEnabled: document.querySelector("#reminderEnabled"),
+  reminderMinutesField: document.querySelector("#reminderMinutesField"),
+  reminderMinutesBefore: document.querySelector("#reminderMinutesBefore"),
+  reminderStatusNote: document.querySelector("#reminderStatusNote"),
   eventNotes: document.querySelector("#eventNotes"),
   editScopeNote: document.querySelector("#editScopeNote"),
   formError: document.querySelector("#formError"),
@@ -95,11 +147,44 @@ const elements = {
   deleteDialogMessage: document.querySelector("#deleteDialogMessage"),
   cancelDeleteButton: document.querySelector("#cancelDeleteButton"),
   confirmDeleteButton: document.querySelector("#confirmDeleteButton"),
+  accountDialog: document.querySelector("#accountDialog"),
+  accountName: document.querySelector("#accountName"),
+  notificationPermissionText: document.querySelector(
+    "#notificationPermissionText",
+  ),
+  closeAccountDialog: document.querySelector("#closeAccountDialog"),
+  changePasswordButton: document.querySelector("#changePasswordButton"),
+  exportDataButton: document.querySelector("#exportDataButton"),
+  importDataButton: document.querySelector("#importDataButton"),
+  logoutButton: document.querySelector("#logoutButton"),
+  passwordDialog: document.querySelector("#passwordDialog"),
+  passwordForm: document.querySelector("#passwordForm"),
+  closePasswordDialog: document.querySelector("#closePasswordDialog"),
+  cancelPasswordButton: document.querySelector("#cancelPasswordButton"),
+  currentPassword: document.querySelector("#currentPassword"),
+  newPassword: document.querySelector("#newPassword"),
+  newPasswordConfirm: document.querySelector("#newPasswordConfirm"),
+  passwordError: document.querySelector("#passwordError"),
+  resetAccountDialog: document.querySelector("#resetAccountDialog"),
+  resetConfirmInput: document.querySelector("#resetConfirmInput"),
+  resetError: document.querySelector("#resetError"),
+  cancelResetButton: document.querySelector("#cancelResetButton"),
+  confirmResetButton: document.querySelector("#confirmResetButton"),
+  importDialog: document.querySelector("#importDialog"),
+  importDialogMessage: document.querySelector("#importDialogMessage"),
+  cancelImportButton: document.querySelector("#cancelImportButton"),
+  confirmImportButton: document.querySelector("#confirmImportButton"),
+  importFileInput: document.querySelector("#importFileInput"),
   toast: document.querySelector("#toast"),
 };
 
+const initialData = loadInitialData();
 const state = {
-  events: loadEvents(),
+  events: initialData.events,
+  account: initialData.account,
+  authenticated: initialData.authenticated,
+  storageCorrupt: initialData.storageCorrupt,
+  platform: nativeApp ? "android" : "web",
   view: "day",
   selectedDate: todayISO(),
   weekCursor: startOfWeek(todayISO()),
@@ -109,6 +194,8 @@ const state = {
   activityQuery: "",
   autoScrollDay: true,
   dayScrollTarget: null,
+  notificationStatus: null,
+  pendingImportEvents: null,
 };
 
 let toastTimer = null;
@@ -121,15 +208,52 @@ function endOfWeek(isoDate) {
   return addDays(startOfWeek(isoDate), 6);
 }
 
-function loadEvents() {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) {
-      return [];
+function loadInitialData() {
+  if (nativeApp) {
+    const loaded = readNativeState();
+    if (loaded.status === "ok") {
+      return {
+        events: loaded.state.events,
+        account: loaded.state.account,
+        authenticated: loaded.state.sessionActive,
+        storageCorrupt: false,
+      };
     }
 
-    const payload = JSON.parse(stored);
-    return Array.isArray(payload) ? readStoragePayload({ events: payload }) : readStoragePayload(payload);
+    return {
+      events: [],
+      account: null,
+      authenticated: false,
+      storageCorrupt: loaded.status === "corrupt",
+    };
+  }
+
+  try {
+    return {
+      events: readWebEvents(),
+      account: null,
+      authenticated: true,
+      storageCorrupt: false,
+    };
+  } catch (error) {
+    console.error("读取本地活动失败", error);
+    return {
+      events: [],
+      account: null,
+      authenticated: true,
+      storageCorrupt: false,
+    };
+  }
+}
+
+function loadEvents() {
+  if (nativeApp) {
+    const loaded = readNativeState();
+    return loaded.status === "ok" ? loaded.state.events : [];
+  }
+
+  try {
+    return readWebEvents();
   } catch (error) {
     console.error("读取本地活动失败", error);
     return [];
@@ -138,16 +262,410 @@ function loadEvents() {
 
 function persistEvents() {
   try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(makeStoragePayload(state.events)),
-    );
+    if (nativeApp) {
+      if (!state.account) {
+        throw new Error("没有可用的本地账户");
+      }
+      writeNativeState({
+        account: state.account,
+        sessionActive: state.authenticated,
+        events: state.events,
+      });
+    } else {
+      writeWebEvents(state.events);
+    }
+    void refreshNativeNotifications();
     return true;
   } catch (error) {
     console.error("保存本地活动失败", error);
-    showToast("保存失败，请检查浏览器可用空间");
+    showToast("保存失败，请检查设备可用空间");
     return false;
   }
+}
+
+function notificationStatusText(status) {
+  if (!nativeApp) {
+    return "网页版不发送系统提醒。";
+  }
+  if (!status) {
+    return "正在检查通知权限…";
+  }
+  if (!status?.supported) {
+    return "当前设备未提供本地通知能力。";
+  }
+  if (status.display === "error") {
+    return "提醒同步失败，请重新打开应用后再试。";
+  }
+  if (!status.granted) {
+    return "通知权限未开启，活动提醒不会送达。";
+  }
+  if (status.scheduled > 0) {
+    return `通知权限已开启，当前已安排 ${status.scheduled} 次提醒。安卓系统可能延迟几分钟。`;
+  }
+  return "通知权限已开启，目前没有待安排的活动提醒。";
+}
+
+function renderNotificationStatus() {
+  const message = notificationStatusText(state.notificationStatus);
+  elements.notificationPermissionText.textContent = message;
+  elements.reminderStatusNote.textContent = message;
+}
+
+async function refreshNativeNotifications() {
+  if (!nativeApp || !state.authenticated || !state.account) {
+    return;
+  }
+
+  try {
+    state.notificationStatus =
+      await syncScheduledNotifications(state.events);
+  } catch (error) {
+    console.error("同步活动提醒失败", error);
+    state.notificationStatus = {
+      supported: true,
+      granted: false,
+      display: "error",
+      scheduled: 0,
+    };
+  }
+  renderNotificationStatus();
+}
+
+function updateReminderUi() {
+  if (!nativeApp) {
+    elements.reminderField.hidden = true;
+    return;
+  }
+
+  const enabled = elements.reminderEnabled.checked;
+  elements.reminderMinutesField.classList.toggle(
+    "is-disabled",
+    !enabled,
+  );
+  elements.reminderMinutesBefore.disabled = !enabled;
+  elements.reminderMinutesBefore.required = enabled;
+  elements.reminderField.classList.toggle("is-disabled", !enabled);
+}
+
+function renderAuthScreen() {
+  const corrupt = state.storageCorrupt;
+  const hasAccount = Boolean(state.account);
+
+  elements.authError.hidden = true;
+  elements.resetError.hidden = true;
+  elements.authSubmitButton.disabled = false;
+
+  if (corrupt) {
+    elements.authKicker.textContent = "存储错误";
+    elements.authTitle.textContent = "无法读取本地账户";
+    elements.authDescription.textContent =
+      "应用没有覆盖原有数据。若已保留活动备份，可重置本地账户后重新导入。";
+    elements.authForm.hidden = true;
+    elements.forgotPasswordButton.hidden = false;
+    elements.forgotPasswordButton.textContent = "重置本地账户";
+    return;
+  }
+
+  elements.authForm.hidden = false;
+  elements.authPassword.value = "";
+  elements.authPasswordConfirm.value = "";
+  elements.authConfirmField.hidden = hasAccount;
+  elements.authPasswordConfirm.required = !hasAccount;
+  elements.authPassword.autocomplete = hasAccount
+    ? "current-password"
+    : "new-password";
+  elements.authUsername.value = hasAccount
+    ? state.account.username
+    : "";
+  elements.authUsername.readOnly = hasAccount;
+  elements.authKicker.textContent = "仅保存在这台手机";
+  elements.authTitle.textContent = hasAccount ? "登录" : "创建账户";
+  elements.authDescription.textContent = hasAccount
+    ? "输入密码继续。登录状态会在此设备上保持。"
+    : "创建本地账户后即可导入网页版导出的活动。";
+  elements.authSubmitButton.textContent = hasAccount
+    ? "登录并进入"
+    : "创建并进入";
+  elements.forgotPasswordButton.hidden = !hasAccount;
+  elements.forgotPasswordButton.textContent = "忘记密码？";
+}
+
+function updateAppAccess() {
+  if (!nativeApp) {
+    elements.authScreen.hidden = true;
+    elements.appShell.hidden = false;
+    elements.addFab.hidden = false;
+    elements.accountButton.hidden = true;
+    return;
+  }
+
+  const needsAuth = !state.account || !state.authenticated;
+  elements.authScreen.hidden = !needsAuth;
+  elements.appShell.hidden = needsAuth;
+  elements.addFab.hidden = needsAuth;
+  elements.accountButton.hidden = needsAuth;
+
+  if (needsAuth) {
+    renderAuthScreen();
+  }
+}
+
+function configurePlatformControls() {
+  document.body.classList.toggle("is-native", nativeApp);
+  document.body.classList.toggle("is-web", !nativeApp);
+  elements.androidDownloadButton.hidden = nativeApp;
+  elements.webExportButton.hidden = nativeApp;
+  elements.accountButton.hidden = true;
+  elements.reminderField.hidden = !nativeApp;
+}
+
+function handleNotificationAction({ seriesId, occurrenceDate }) {
+  if (!state.authenticated) {
+    return;
+  }
+
+  const series = state.events.find((event) => event.id === seriesId);
+  if (!series || getOccurrenceIndex(series, occurrenceDate) === null) {
+    showToast("这条提醒对应的活动已不存在");
+    return;
+  }
+
+  state.selectedDate = occurrenceDate;
+  state.monthCursor = startOfMonth(occurrenceDate);
+  state.view = "day";
+  state.autoScrollDay = true;
+  state.dayScrollTarget = timeToMinutes(series.startTime) - 60;
+  render({ scrollTargetMinutes: state.dayScrollTarget });
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  const username = elements.authUsername.value.trim();
+  const password = elements.authPassword.value;
+  const confirmation = elements.authPasswordConfirm.value;
+  elements.authError.hidden = true;
+  elements.authSubmitButton.disabled = true;
+
+  try {
+    if (!state.account) {
+      const validationError = validateAccountInput(
+        username,
+        password,
+        confirmation,
+      );
+      if (validationError) {
+        throw new Error(validationError);
+      }
+
+      state.account = await createLocalAccount({
+        username,
+        password,
+      });
+      state.events = [];
+      state.authenticated = true;
+      state.storageCorrupt = false;
+      persistEvents();
+      updateAppAccess();
+      render();
+      showToast("本地账户已创建");
+    } else {
+      const valid =
+        username === state.account.username &&
+        (await verifyAccountPassword(state.account, password));
+      if (!valid) {
+        throw new Error("账户名或密码不正确");
+      }
+
+      state.authenticated = true;
+      persistEvents();
+      updateAppAccess();
+      render();
+      showToast("已登录");
+    }
+
+    void refreshNativeNotifications();
+  } catch (error) {
+    elements.authError.textContent = error.message;
+    elements.authError.hidden = false;
+  } finally {
+    elements.authSubmitButton.disabled = false;
+  }
+}
+
+function openAccountDialog() {
+  if (!nativeApp || !state.account) {
+    return;
+  }
+
+  elements.accountName.textContent = state.account.username;
+  renderNotificationStatus();
+  elements.accountDialog.showModal();
+  void refreshNativeNotifications();
+}
+
+function logout() {
+  if (!nativeApp || !state.account) {
+    return;
+  }
+
+  state.authenticated = false;
+  persistEvents();
+  void clearScheduledNotifications();
+  elements.accountDialog.close();
+  updateAppAccess();
+}
+
+async function handlePasswordChange(event) {
+  event.preventDefault();
+  elements.passwordError.hidden = true;
+
+  try {
+    const current = elements.currentPassword.value;
+    const next = elements.newPassword.value;
+    const confirmation = elements.newPasswordConfirm.value;
+    if (!(await verifyAccountPassword(state.account, current))) {
+      throw new Error("当前密码不正确");
+    }
+    const validationError = validateAccountInput(
+      state.account.username,
+      next,
+      confirmation,
+    );
+    if (validationError) {
+      throw new Error(validationError);
+    }
+
+    state.account = await updateAccountPassword(state.account, next);
+    persistEvents();
+    elements.passwordForm.reset();
+    elements.passwordDialog.close();
+    showToast("密码已更新");
+  } catch (error) {
+    elements.passwordError.textContent = error.message;
+    elements.passwordError.hidden = false;
+  }
+}
+
+function openResetDialog() {
+  elements.resetConfirmInput.value = "";
+  elements.resetError.hidden = true;
+  elements.resetAccountDialog.showModal();
+}
+
+async function confirmAccountReset() {
+  if (elements.resetConfirmInput.value.trim() !== "重置") {
+    elements.resetError.textContent = "请输入“重置”两个字";
+    elements.resetError.hidden = false;
+    return;
+  }
+
+  try {
+    removeNativeState();
+    await clearScheduledNotifications();
+    state.account = null;
+    state.authenticated = false;
+    state.events = [];
+    state.storageCorrupt = false;
+    state.notificationStatus = null;
+    elements.resetAccountDialog.close();
+    updateAppAccess();
+    showToast("本地账户已重置");
+  } catch (error) {
+    elements.resetError.textContent = error.message;
+    elements.resetError.hidden = false;
+  }
+}
+
+function backupFilename() {
+  return `daily-route-backup-${todayISO()}.json`;
+}
+
+function downloadTextFile(filename, contents) {
+  const blob = new Blob([contents], {
+    type: "application/json;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function exportActivities() {
+  try {
+    const backup = createBackup(state.events, {
+      appVersion: APP_VERSION,
+    });
+    const contents = JSON.stringify(backup, null, 2);
+    const filename = backupFilename();
+
+    if (nativeApp) {
+      const shared = await shareNativeBackup(filename, contents);
+      if (!shared) {
+        throw new Error("当前设备无法打开系统分享面板");
+      }
+      showToast("已打开备份分享面板");
+    } else {
+      downloadTextFile(filename, contents);
+      showToast("活动备份已导出");
+    }
+  } catch (error) {
+    showToast(error.message || "导出活动失败");
+  }
+}
+
+function openImportFilePicker() {
+  elements.importFileInput.value = "";
+  elements.importFileInput.click();
+}
+
+async function handleImportFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) {
+    return;
+  }
+
+  try {
+    const backup = parseBackup(await file.text());
+    const window = getScheduleWindow();
+    const conflict = findConflictWithinRange(
+      backup.events,
+      window.startDate,
+      window.endDate,
+    );
+    if (conflict) {
+      throw new Error(
+        `备份中有重叠活动：${formatShortDate(conflict.date)}「${conflict.firstSeries.title}」与「${conflict.secondSeries.title}」`,
+      );
+    }
+
+    state.pendingImportEvents = backup.events;
+    elements.importDialogMessage.textContent =
+      `备份包含 ${backup.eventCount} 项活动。导入后会替换当前 ${state.events.length} 项活动，账户和密码不会改变。`;
+    elements.importDialog.showModal();
+  } catch (error) {
+    showToast(error.message || "无法读取备份文件");
+  }
+}
+
+function confirmImport() {
+  if (!state.pendingImportEvents) {
+    elements.importDialog.close();
+    return;
+  }
+
+  state.events = state.pendingImportEvents;
+  state.pendingImportEvents = null;
+  persistEvents();
+  elements.importDialog.close();
+  state.view = "day";
+  state.selectedDate = todayISO();
+  state.autoScrollDay = true;
+  render();
+  showToast("活动备份已导入");
 }
 
 function buildTimeLabels() {
@@ -832,8 +1350,11 @@ function openAddDialog(date = state.selectedDate) {
   elements.endTime.value = defaults.endTime;
   elements.repeatEvery.value = "1";
   elements.repeatCount.value = "1";
+  elements.reminderEnabled.checked = false;
+  elements.reminderMinutesBefore.value = "5";
   elements.eventNotes.value = "";
   setRepeatMode("limited");
+  updateReminderUi();
   elements.editScopeNote.hidden = true;
   elements.deleteEventButton.hidden = true;
   elements.formError.hidden = true;
@@ -864,6 +1385,10 @@ function openEditDialog(series, occurrenceDate) {
   elements.startTime.value = series.startTime;
   elements.endTime.value = series.endTime;
   elements.repeatEvery.value = String(series.repeatEvery);
+  elements.reminderEnabled.checked = series.reminderEnabled === true;
+  elements.reminderMinutesBefore.value = String(
+    series.reminderMinutesBefore ?? 5,
+  );
 
   if (remaining === null) {
     elements.repeatCount.value = "1";
@@ -874,6 +1399,7 @@ function openEditDialog(series, occurrenceDate) {
   }
 
   elements.eventNotes.value = series.notes ?? "";
+  updateReminderUi();
   elements.editScopeNote.hidden = false;
   elements.deleteEventButton.hidden = false;
   elements.formError.hidden = true;
@@ -913,8 +1439,31 @@ function readFormInput() {
       currentRepeatMode() === "infinite"
         ? null
         : Number(elements.repeatCount.value),
+    reminderEnabled: nativeApp && elements.reminderEnabled.checked,
+    reminderMinutesBefore:
+      elements.reminderMinutesBefore.value === ""
+        ? null
+        : Number(elements.reminderMinutesBefore.value),
     notes: elements.eventNotes.value.trim(),
   };
+}
+
+async function handleReminderToggle() {
+  updateReminderUi();
+  if (!nativeApp || !elements.reminderEnabled.checked) {
+    return;
+  }
+
+  try {
+    state.notificationStatus = await requestNotificationPermission();
+    renderNotificationStatus();
+    if (!state.notificationStatus.granted) {
+      showToast("通知权限未开启，提醒可能无法送达");
+    }
+  } catch (error) {
+    console.error("请求通知权限失败", error);
+    showToast("无法请求通知权限，请检查系统设置");
+  }
 }
 
 function handleFormSubmit(event) {
@@ -1073,6 +1622,59 @@ function showToast(message) {
 }
 
 function bindEvents() {
+  elements.authForm.addEventListener("submit", handleAuthSubmit);
+  elements.forgotPasswordButton.addEventListener("click", openResetDialog);
+  elements.cancelResetButton.addEventListener("click", () => {
+    elements.resetAccountDialog.close();
+  });
+  elements.confirmResetButton.addEventListener(
+    "click",
+    confirmAccountReset,
+  );
+
+  elements.accountButton.addEventListener("click", openAccountDialog);
+  elements.closeAccountDialog.addEventListener("click", () => {
+    elements.accountDialog.close();
+  });
+  elements.changePasswordButton.addEventListener("click", () => {
+    elements.passwordForm.reset();
+    elements.passwordError.hidden = true;
+    elements.accountDialog.close();
+    elements.passwordDialog.showModal();
+  });
+  elements.closePasswordDialog.addEventListener("click", () => {
+    elements.passwordDialog.close();
+  });
+  elements.cancelPasswordButton.addEventListener("click", () => {
+    elements.passwordDialog.close();
+  });
+  elements.passwordForm.addEventListener(
+    "submit",
+    handlePasswordChange,
+  );
+  elements.logoutButton.addEventListener("click", logout);
+  elements.exportDataButton.addEventListener("click", exportActivities);
+  elements.importDataButton.addEventListener(
+    "click",
+    openImportFilePicker,
+  );
+  elements.importFileInput.addEventListener(
+    "change",
+    handleImportFile,
+  );
+  elements.cancelImportButton.addEventListener("click", () => {
+    state.pendingImportEvents = null;
+    elements.importDialog.close();
+  });
+  elements.confirmImportButton.addEventListener(
+    "click",
+    confirmImport,
+  );
+  elements.webExportButton.addEventListener(
+    "click",
+    exportActivities,
+  );
+
   elements.dayNavButton.addEventListener("click", () => setView("day"));
   elements.weekNavButton.addEventListener("click", () => setView("week"));
   elements.monthNavButton.addEventListener("click", () => setView("month"));
@@ -1168,6 +1770,10 @@ function bindEvents() {
   elements.repeatModeInputs.forEach((input) => {
     input.addEventListener("change", updateRepeatModeUI);
   });
+  elements.reminderEnabled.addEventListener(
+    "change",
+    handleReminderToggle,
+  );
   elements.deleteEventButton.addEventListener(
     "click",
     openDeleteConfirmation,
@@ -1194,15 +1800,31 @@ function bindEvents() {
   );
 
   window.addEventListener("storage", (event) => {
-    if (event.key === STORAGE_KEY) {
+    if (!nativeApp && event.key === WEB_STORAGE_KEY) {
       state.events = loadEvents();
       render();
+    } else if (nativeApp && event.key === NATIVE_STORAGE_KEY) {
+      const loaded = readNativeState();
+      if (loaded.status === "ok") {
+        state.account = loaded.state.account;
+        state.authenticated = loaded.state.sessionActive;
+        state.events = loaded.state.events;
+        state.storageCorrupt = false;
+      } else if (loaded.status === "corrupt") {
+        state.storageCorrupt = true;
+        state.authenticated = false;
+      }
+      updateAppAccess();
+      if (state.authenticated) {
+        render();
+      }
     }
   });
 
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) {
+    if (!document.hidden && (!nativeApp || state.authenticated)) {
       render();
+      void refreshNativeNotifications();
     }
   });
 }
@@ -1216,7 +1838,11 @@ async function preparePersistentStorage() {
 }
 
 function registerServiceWorker() {
-  if ("serviceWorker" in navigator && window.isSecureContext) {
+  if (
+    !nativeApp &&
+    "serviceWorker" in navigator &&
+    window.isSecureContext
+  ) {
     navigator.serviceWorker.register("./sw.js").catch((error) => {
       console.error("离线缓存注册失败", error);
     });
@@ -1224,8 +1850,20 @@ function registerServiceWorker() {
 }
 
 buildTimeLabels();
+configurePlatformControls();
 bindEvents();
+updateAppAccess();
 render({ scrollTargetMinutes: undefined });
 preparePersistentStorage();
 registerServiceWorker();
+if (nativeApp) {
+  void registerNotificationActionListener(handleNotificationAction).catch(
+    (error) => {
+      console.error("注册通知点击监听失败", error);
+    },
+  );
+}
+if (nativeApp && state.authenticated) {
+  void refreshNativeNotifications();
+}
 

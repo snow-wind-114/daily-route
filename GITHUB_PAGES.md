@@ -1,59 +1,77 @@
-# GitHub Pages 发布步骤
+# 网页与 APK 发布
 
-应用本身是静态 PWA，不需要数据库或后台服务器。GitHub Pages 只负责保存和提供网页文件；活动数据仍然只保存在手机浏览器里。
+GitHub Pages 负责提供静态网页，GitHub Releases 负责提供安卓 APK。两者都不保存用户账户或活动数据。
 
-## 1. 创建 GitHub 仓库
+## 正式地址
 
-1. 登录 GitHub。
-2. 新建一个仓库，建议名称：`daily-route`。
-3. 可见性选择 `Public`，这样免费账户可以直接使用 GitHub Pages。
-4. 不要勾选自动创建 README、`.gitignore` 或许可证。
+- 网页：<https://snow-wind-114.github.io/daily-route/>
+- APK 固定下载地址：
+  <https://github.com/snow-wind-114/daily-route/releases/latest/download/daily-route.apk>
 
-创建后，仓库地址类似：
+网页把下载按钮指向最后的固定地址。因此每个正式 Release 都必须包含名为 `daily-route.apk` 的资产。
 
-```text
-https://github.com/你的用户名/daily-route.git
-```
+## 网页发布
 
-## 2. 推送本地项目
+仓库 Settings → Pages 应保持：
 
-在项目目录运行，把下面地址替换成你的实际仓库地址：
+- Source：`Deploy from a branch`
+- Branch：`main`
+- Folder：`/(root)`
 
-```powershell
-git remote add origin https://github.com/你的用户名/daily-route.git
-git push -u origin main
-```
+推送 `main` 后 GitHub Pages 会自动发布。不要修改仓库名或 Pages 路径，否则浏览器会把新地址当成新的数据空间，原有网页活动不会自动迁移。
 
-第一次推送时，Git 会要求登录 GitHub。请在浏览器完成登录授权，不要把密码或令牌发给我。
+## 构建正式 APK
 
-## 3. 启用 GitHub Pages
-
-1. 打开仓库的 `Settings`。
-2. 进入左侧 `Pages`。
-3. 在 `Build and deployment` 的 `Source` 中选择 `Deploy from a branch`。
-4. 分支选择 `main`，目录选择 `/ (root)`，然后保存。
-
-首次发布可能需要等待一至两分钟。网址是：
-
-```text
-https://你的用户名.github.io/daily-route/
-```
-
-## 4. 安装到安卓手机
-
-1. 使用安卓 Chrome 打开发布网址。
-2. 等页面完整加载一次。
-3. 打开 Chrome 菜单，选择“安装应用”或“添加到主屏幕”。
-4. 安装后关闭网络，确认应用仍能打开和编辑。
-
-## 后续更新
-
-以后修改代码后，在项目目录运行：
+先同步网页资源和插件：
 
 ```powershell
-git add .
-git commit -m "更新应用"
-git push
+npm install
+npm run cap:sync
 ```
 
-GitHub Pages 会自动重新发布 `main` 分支的最新内容。不要修改仓库名称或 Pages 地址，否则手机会把新网址当成另一份应用数据。
+再构建：
+
+```powershell
+$env:JAVA_HOME = 'E:\Android\Android Studio\jbr'
+cd .\android
+.\gradlew.bat assembleRelease --no-daemon
+```
+
+构建结果：
+
+```text
+android/app/build/outputs/apk/release/app-release.apk
+```
+
+签名材料必须位于被 Git 忽略的：
+
+```text
+android/daily-route-release.jks
+android/keystore.properties
+```
+
+不要把密钥或密码放进仓库、Issue 或 Release。
+
+## 创建 GitHub Release
+
+1. 把 APK 重命名为 `daily-route.apk`。
+2. 在 GitHub 仓库打开 Releases → Draft a new release。
+3. 标签使用 `v0.2.0`，并把该版本标记为 Latest。
+4. 上传 `daily-route.apk`。
+5. 在说明中写明版本、安装未知来源提示、备份提醒和 SHA-256。
+6. 发布后检查固定下载地址返回 APK。
+
+PowerShell 计算校验值：
+
+```powershell
+Get-FileHash .\daily-route.apk -Algorithm SHA256
+```
+
+## 发布后验证
+
+```powershell
+Invoke-WebRequest -Uri 'https://snow-wind-114.github.io/daily-route/' -UseBasicParsing
+Invoke-WebRequest -Uri 'https://github.com/snow-wind-114/daily-route/releases/latest/download/daily-route.apk' -UseBasicParsing
+```
+
+再使用同一稳定签名构建一个更高 `versionCode` 的 APK，覆盖安装并确认账户、登录状态和活动均保留。

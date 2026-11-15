@@ -85,7 +85,7 @@ svg {
   flex: 0 0 auto;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
   padding: calc(18px + env(safe-area-inset-top)) 20px 14px;
   background: rgb(255 255 255 / 94%);
   backdrop-filter: blur(14px);
@@ -93,6 +93,18 @@ svg {
 
 .topbar-copy {
   min-width: 0;
+}
+
+.topbar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.topbar .icon-button {
+  width: 40px;
+  height: 40px;
 }
 
 .view-kicker,
@@ -137,6 +149,30 @@ svg {
   border-radius: 14px;
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.android-download-button {
+  display: inline-flex;
+  height: 38px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid #d8e4fb;
+  border-radius: 13px;
+  background: #f7faff;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.android-download-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.android-download-button:active {
+  background: var(--accent-soft-strong);
 }
 
 .icon-button:active,
@@ -1070,6 +1106,108 @@ svg {
   font-weight: 650;
 }
 
+.reminder-field {
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fbfcfe;
+}
+
+.reminder-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+}
+
+.reminder-toggle span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.reminder-toggle strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.reminder-toggle small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.reminder-toggle input {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  flex: 0 0 auto;
+  appearance: none;
+  border-radius: 999px;
+  background: #dfe4ec;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.reminder-toggle input::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(28 39 56 / 20%);
+  content: "";
+  transition: transform 150ms ease;
+}
+
+.reminder-toggle input:checked {
+  background: var(--accent);
+}
+
+.reminder-toggle input:checked::after {
+  transform: translateX(18px);
+}
+
+.reminder-time {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 7px;
+  color: #687387;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.reminder-time input {
+  width: 70px;
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+  text-align: center;
+}
+
+.reminder-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.reminder-field.is-disabled .reminder-time {
+  opacity: 0.45;
+}
+
 .segmented-control {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1204,6 +1342,152 @@ svg {
   line-height: 1.55;
 }
 
+.account-sheet {
+  padding: 22px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.account-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.account-header h2 {
+  margin: 0;
+  font-size: 21px;
+}
+
+.account-status {
+  margin: 16px 0 18px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: #f6f8fb;
+  color: #667286;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.account-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.account-actions .secondary-button {
+  width: 100%;
+}
+
+.account-logout {
+  grid-column: 1 / -1;
+  min-height: 40px;
+  border: 1px solid #f0dada;
+  border-radius: 11px;
+  background: var(--danger-soft);
+}
+
+.compact-sheet {
+  max-height: min(86dvh, 620px);
+}
+
+.password-fields {
+  padding-top: 12px;
+}
+
+.reset-confirm-field {
+  margin-top: 18px;
+}
+
+.auth-screen {
+  display: grid;
+  width: 100%;
+  min-height: 100dvh;
+  place-items: center;
+  padding:
+    calc(28px + env(safe-area-inset-top))
+    20px
+    calc(28px + env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at 50% 5%, #eef5ff 0, transparent 42%),
+    #fff;
+}
+
+.auth-card {
+  width: min(100%, 390px);
+  padding: 28px 24px 24px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 22px 70px rgb(41 58 86 / 12%);
+}
+
+.auth-brand {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  margin-bottom: 22px;
+  border-radius: 17px;
+  background: var(--accent);
+  box-shadow: 0 10px 24px rgb(47 111 237 / 23%);
+  color: #fff;
+}
+
+.auth-brand svg {
+  width: 27px;
+  height: 27px;
+  stroke-width: 1.9;
+}
+
+.auth-card h1 {
+  margin: 0;
+  font-size: 29px;
+  letter-spacing: -0.035em;
+}
+
+.auth-description,
+.auth-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.auth-description {
+  margin: 8px 0 22px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.auth-submit {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 3px;
+}
+
+.auth-link {
+  display: block;
+  margin: 14px auto 0;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.auth-note {
+  margin: 15px 0 0;
+  text-align: center;
+}
+
 .confirm-actions {
   display: flex;
   justify-content: flex-end;
@@ -1283,6 +1567,18 @@ svg {
   }
 }
 
+@media (max-width: 380px) {
+  .android-download-button {
+    width: 40px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .android-download-button span {
+    display: none;
+  }
+}
+
 @media (max-width: 370px) {
   .topbar {
     padding-right: 16px;
@@ -1312,6 +1608,10 @@ svg {
 
   .sheet-footer {
     flex-wrap: wrap;
+  }
+
+  .topbar-actions {
+    gap: 5px;
   }
 
   .danger-button {

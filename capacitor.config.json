@@ -1,0 +1,11 @@
+{
+  "appId": "com.snowwind114.dailyroute",
+  "appName": "每日安排",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

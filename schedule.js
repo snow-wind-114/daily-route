@@ -10,6 +10,8 @@ export const STORAGE_VERSION = 1;
 export const MAX_REPEAT_EVERY = 14;
 export const MAX_REPEAT_COUNT = 20;
 export const OCCUPANCY_SLOT_MINUTES = 120;
+export const DEFAULT_REMINDER_MINUTES = 5;
+export const MAX_REMINDER_MINUTES = 1440;
 
 function createId() {
   if (globalThis.crypto?.randomUUID) {
@@ -72,6 +74,13 @@ export function normalizeSeries(raw) {
     repeatEvery,
     repeatCount,
     notes: typeof raw.notes === "string" ? raw.notes.slice(0, 500) : "",
+    reminderEnabled: raw.reminderEnabled === true,
+    reminderMinutesBefore:
+      integerInRange(
+        raw.reminderMinutesBefore,
+        0,
+        MAX_REMINDER_MINUTES,
+      ) ?? DEFAULT_REMINDER_MINUTES,
     endBefore,
     createdAt:
       typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
@@ -118,6 +127,17 @@ export function validateActivityInput(
     return "重复次数必须是 1–20 次或无限次";
   }
 
+  if (
+    input.reminderEnabled === true &&
+    integerInRange(
+      input.reminderMinutesBefore,
+      0,
+      MAX_REMINDER_MINUTES,
+    ) === null
+  ) {
+    return "提醒时间必须是 0–1440 分钟";
+  }
+
   return null;
 }
 
@@ -132,6 +152,9 @@ export function seriesFromInput(input, { id, createdAt } = {}) {
     repeatEvery: Number(input.repeatEvery),
     repeatCount: input.repeatCount === null ? null : Number(input.repeatCount),
     notes: input.notes,
+    reminderEnabled: input.reminderEnabled === true,
+    reminderMinutesBefore:
+      input.reminderMinutesBefore ?? DEFAULT_REMINDER_MINUTES,
     endBefore: null,
     createdAt: createdAt ?? now,
     updatedAt: now,
@@ -259,6 +282,39 @@ export function findScheduleConflict(
         }
       }
     }
+  }
+
+  return null;
+}
+
+export function findConflictWithinRange(events, startDate, endDate) {
+  const occurrences = occurrencesBetween(events, startDate, endDate).sort(
+    (left, right) =>
+      left.date.localeCompare(right.date) ||
+      timeToMinutes(left.series.startTime) -
+        timeToMinutes(right.series.startTime),
+  );
+  const activeByDate = new Map();
+
+  for (const occurrence of occurrences) {
+    const start = timeToMinutes(occurrence.series.startTime);
+    const end = timeToMinutes(occurrence.series.endTime);
+    const active = activeByDate.get(occurrence.date) ?? [];
+
+    for (const existing of active) {
+      const existingStart = timeToMinutes(existing.series.startTime);
+      const existingEnd = timeToMinutes(existing.series.endTime);
+      if (start < existingEnd && end > existingStart) {
+        return {
+          date: occurrence.date,
+          firstSeries: existing.series,
+          secondSeries: occurrence.series,
+        };
+      }
+    }
+
+    active.push(occurrence);
+    activeByDate.set(occurrence.date, active);
   }
 
   return null;

@@ -1,172 +1,118 @@
 # Daily Route Project Guide
 
-> 项目级说明。靠近本仓库的规则优先于 `D:\agent project\AGENTS.md` 的通用规则。
+> 项目级说明。本文件优先于 `D:\agent project\AGENTS.md` 的通用规则。
 
 ## 版本与状态
 
-- 当前版本：`v0.1`
+- 当前版本：`v0.2`
 - 版本日期：`2026-11-15`
-- 状态：可用的单机离线 MVP
-- 发布方式：GitHub Pages，`main` 分支根目录
+- 状态：网页版稳定；安卓版可构建、可安装，等待真机通知验收
+- 网页：<https://snow-wind-114.github.io/daily-route/>
+- APK 固定地址：
+  <https://github.com/snow-wind-114/daily-route/releases/latest/download/daily-route.apk>
 - 仓库：<https://github.com/snow-wind-114/daily-route>
-- 正式网址：<https://snow-wind-114.github.io/daily-route/>
 
 ### 版本规则
 
-每次提交到 GitHub 时，必须在同一个提交中更新本文件。
+每次提交 GitHub 时，必须在同一提交中更新本文件。
 
-- 文档修正、兼容性 bugfix、内部重构但不改变行为：`v0.1.1`、`v0.1.2`……
-- 新增用户可见功能、数据结构或重要交互：`v0.2`、`v0.3`……
-- 进入正式稳定版或发生不兼容的数据/URL 变化：`v1.0`、`v2.0`……
+- 文档修正、兼容性 bugfix、内部重构：`v0.2.1`、`v0.2.2`……
+- 新增用户可见功能、数据结构或重要交互：`v0.3`、`v0.4`……
+- 正式稳定版或不兼容的数据/URL 变化：`v1.0`、`v2.0`……
 - 每个提交至少更新“当前版本”“版本日期”“最近变更”和“最近验证”。
-- 每次功能或架构变化，同时检查下方模块地图、数据模型、规则和测试命令是否仍然准确。
 
 ### 最近变更
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
-| `v0.1` | 2026-11-15 | 建立项目级 Agent 指南；记录当前离线日程 MVP 架构与发布流程 |
+| `v0.2` | 2026-11-15 | 网页增加 APK 下载与活动导出；新增安卓本地账户、活动导入导出和非精确本地提醒 |
+| `v0.1` | 2026-11-15 | 建立离线日程 MVP、项目指南与 GitHub Pages 发布流程 |
 
 ### 最近验证
 
-- `node --test`：13 项规则测试通过。
-- 手机尺寸下的今天、本周、本月、活动和编辑流程已人工验证。
-- GitHub Pages 正式网址返回 `200`。
+- `node --test`：21 项测试通过。
+- `node --check`：网页、账户、备份、提醒和领域模块语法通过。
+- 网页 390 px：无登录/提醒控件，APK 下载按钮和 JSON 导出可用。
+- 网页断网重载：离线 Service Worker 成功恢复应用壳。
+- Android Debug/Release：Gradle 构建成功。
+- Android `testDebugUnitTest`：通过。
+- Release APK：v2 签名验证通过，`versionCode=2`，`versionName=0.2.0`。
+- Release APK 权限：仅 `POST_NOTIFICATIONS`、`RECEIVE_BOOT_COMPLETED` 和 Android 自动生成的动态接收器权限。
+- Android 16 模拟器：APK 可安装、注册页可加载、账户在应用重启后保留。
+- Android 16 模拟器：非精确提醒成功进入待发送队列，并在应用切到后台后送达通知栏。
+- Android 16 模拟器：备份可写入应用缓存并调起系统分享面板。
+- 尚未完成：真实安卓手机的通知准时性、通知点击和重启恢复验收。
 
-## 产品目标与边界
+## 产品边界
 
-Daily Route 是一个面向安卓手机的离线日程 PWA。用户提前安排课程、会议和日常活动，并在今天时间轴、本周列表、本月占用图和活动项目列表之间查看或编辑。
+Daily Route 是单用户、本地优先的未来活动安排工具。
 
-当前产品约束：
+网页版：
 
-- 单人使用，无账号。
-- 无后端、无云同步、无多设备同步。
-- 活动数据只保存在当前浏览器、当前网址对应的本地存储中。
-- 不需要记录实际完成情况。
-- 当前版本不发送提醒。
-- 只能创建和查看从今天起未来六个月的安排。
-- 活动不能跨午夜。
-- 同一未来半年内的活动不能重叠。
+- 匿名使用，不提供账户和提醒。
+- 数据只保存在当前浏览器、当前网址对应的 `localStorage`。
+- 可导出 JSON，用于迁移到安卓版或手工备份。
+- 显式提供安卓 APK 下载入口。
 
-未经用户明确要求，不要添加云同步、登录、统计追踪、后台服务、提醒或第三方 API。这些都会改变产品的数据边界和长期维护成本。
+安卓版：
 
-## 技术栈与运行方式
+- 使用本地单账户。
+- 首次注册后保持登录；主动退出或重置后才需要重新验证。
+- 使用系统本地通知，不依赖后端。
+- 可导入/导出活动；导入使用系统文件选择器，导出使用系统分享面板。
+- 是长期使用的主入口，但不自动更新。
+
+始终不使用：
+
+- 后端、云数据库、云同步、多设备同步。
+- 登录服务器、第三方账号或密码找回服务。
+- 统计、追踪、广告或第三方 API。
+- 精确闹钟、电池优化白名单、位置、相机、通讯录、麦克风和广泛文件权限。
+
+## 技术栈
 
 - 原生 HTML、CSS、JavaScript ES Modules。
-- 无 npm 依赖、无打包步骤。
-- 浏览器本地存储：`localStorage`。
-- PWA：Web App Manifest + Service Worker。
+- Node.js 24、npm 12。
+- Capacitor 8.6、Android Gradle Plugin 8.13。
+- Android compileSdk/targetSdk 36，minSdk 24。
+- PWA：Manifest + Service Worker。
+- 安卓插件：Local Notifications、Filesystem、Share。
 - 测试：Node.js 内置 `node:test`。
-- 部署：GitHub Pages 直接从 `main` 根目录发布。
 
-本地运行：
-
-```powershell
-node .\serve.mjs
-```
-
-打开 `http://localhost:4173`。
-
-运行测试：
-
-```powershell
-node --test
-```
-
-基础语法检查：
-
-```powershell
-node --check .\app.js
-node --check .\schedule.js
-node --check .\date-utils.js
-node --check .\sw.js
-node --check .\serve.mjs
-```
-
-## 文件架构
-
-| 文件 | 职责 |
-|---|---|
-| `index.html` | 应用 DOM 骨架、四个主视图、活动表单和确认对话框 |
-| `styles.css` | 移动优先布局、时间轴、月历、活动列表、弹窗和响应式样式 |
-| `app.js` | 应用组合根：DOM 引用、运行时状态、事件绑定、视图渲染、本地持久化和表单流程 |
-| `schedule.js` | 领域逻辑：活动规范化、重复日期计算、冲突检测、系列拆分/截断、占用槽计算 |
-| `date-utils.js` | 纯日期时间工具：ISO 日期、日期差、六个月窗口、月/周边界、时间转换和默认时间 |
-| `manifest.webmanifest` | PWA 名称、主题、安装图标和启动范围 |
-| `sw.js` | 离线缓存、导航请求处理和静态资源缓存更新 |
-| `icons/` | 普通图标、Maskable 图标和 SVG 源图标 |
-| `test/schedule.test.mjs` | 日期、重复、冲突、拆分、删除和月历占用的回归测试 |
-| `serve.mjs` | 无依赖本地静态文件服务器 |
-| `README.md` | 用户启动、安装和数据限制说明 |
-| `GITHUB_PAGES.md` | GitHub Pages 发布步骤 |
-| `scripts/generate-icons.ps1` | 生成 PWA PNG 图标 |
-
-`artifacts/`、`dist/` 和 `daily-route-site.zip` 是本地临时产物，已由 `.gitignore` 排除，不属于运行源码。
-
-## 运行时架构
+工作区分层：
 
 ```text
 index.html
-  -> app.js（ES Module）
-      -> date-utils.js（日期/时间纯函数）
+  -> app.js（组合根、界面状态、交互流程）
       -> schedule.js（活动领域规则）
-      -> localStorage（唯一持久化数据源）
-      -> sw.js（离线应用壳缓存，由独立线程运行）
+      -> date-utils.js（日期和时间纯函数）
+      -> account.js（密码哈希与校验）
+      -> app-state.js（网页/安卓存储边界）
+      -> backup.js（备份格式）
+      -> notifications.js（提醒计划和 Capacitor 适配）
+      -> native-files.js（安卓文件分享）
+      -> localStorage
+
+scripts/prepare-android-web.mjs
+  -> 复制网页资源到 www/
+  -> 用 esbuild 打包 native-entry.js 为 native-bridge.js
+  -> 生成仅供 Capacitor 使用的 www/index.html
+
+android/
+  -> Capacitor Android 工程
+  -> www/ 资源同步到 app/src/main/assets/public
+  -> Gradle 生成 Debug/Release APK
 ```
 
-主要数据流：
+## 网页与安卓存储
 
-```text
-localStorage
-  -> loadEvents()
-  -> state.events
-  -> occurrencesBetween()/occurrencesOnDate()
-  -> render()
-  -> 今天 / 本周 / 本月 / 活动
-```
-
-表单保存流程：
-
-```text
-活动表单
-  -> validateActivityInput()
-  -> seriesFromInput()
-  -> findScheduleConflict()
-  -> splitSeriesForEdit() 或追加新系列
-  -> localStorage
-  -> render()
-```
-
-`app.js` 当前集中承载界面逻辑，是小型项目的刻意取舍。不要把单个纯函数从 `schedule.js` 或 `date-utils.js` 搬回 `app.js`；领域规则应保持可测试且不依赖 DOM。
-
-## 应用状态
-
-`app.js` 的 `state` 是运行时界面状态：
-
-| 字段 | 含义 |
-|---|---|
-| `events` | 从本地存储还原的活动系列数组 |
-| `view` | `day`、`week`、`month`、`activity` |
-| `selectedDate` | 当前日视图日期 |
-| `weekCursor` | 当前周的周一 |
-| `monthCursor` | 当前月第一天 |
-| `editing` | 正在编辑的系列 ID 和发生日期 |
-| `pendingDelete` | 当前确认删除目标 |
-| `activityQuery` | 活动页搜索词 |
-| `autoScrollDay` | 下次日视图渲染是否重新定位时间轴 |
-| `dayScrollTarget` | 保存后需要定位到的时间 |
-
-状态不是多份事实源：活动数据以 `state.events` 为准，持久化时写入 `localStorage`。
-
-## 本地数据模型
-
-存储键：
+网页存储键保持：
 
 ```text
 daily-route.storage.v1
 ```
 
-存储结构：
+网页结构继续为：
 
 ```json
 {
@@ -174,6 +120,54 @@ daily-route.storage.v1
   "events": []
 }
 ```
+
+安卓存储键：
+
+```text
+daily-route.storage.v2
+```
+
+安卓结构：
+
+```json
+{
+  "version": 2,
+  "account": {
+    "username": "账户名",
+    "passwordHash": "base64",
+    "passwordSalt": "base64",
+    "passwordIterations": 210000,
+    "createdAt": "ISO timestamp"
+  },
+  "sessionActive": true,
+  "events": []
+}
+```
+
+网页和安卓是不同 origin、不同数据空间，不存在自动同步。不要把网页数据迁移误写成同步；迁移路径只有：
+
+```text
+网页导出 JSON -> 安卓登录后导入 JSON
+```
+
+`android/.gitignore` 忽略复制到原生工程中的 Web 资源和生成配置。源文件始终位于仓库根目录。
+
+## 账户与安全
+
+- 账户名 2–64 字符。
+- 密码 6–64 字符。
+- 每个账户使用 16 字节随机盐。
+- 密码使用 Web Crypto PBKDF2-HMAC-SHA256，迭代 210,000 次，派生 256 位哈希。
+- 只保存 Base64 哈希和盐，不保存明文密码。
+- 登录状态由 `sessionActive` 保持；它不是加密密钥。
+- 活动内容仍是本地明文。不要声称账户系统能防御设备控制者、root、调试工具或应用数据提取。
+- 忘记密码没有找回服务。登录页的“重置本地账户”会清空账户和活动，必须先提示使用备份。
+- 正常账户面板不提供删除账户入口。
+- 修改密码需要验证当前密码。
+
+账户逻辑在 `account.js`，存储归一化在 `app-state.js`。不得把密码哈希逻辑复制到 DOM 事件中。
+
+## 活动数据
 
 单个活动系列：
 
@@ -187,183 +181,239 @@ daily-route.storage.v1
   repeatEvery: 1,
   repeatCount: 3,
   notes: "带教材",
+  reminderEnabled: false,
+  reminderMinutesBefore: 5,
   endBefore: null,
   createdAt: "ISO timestamp",
   updatedAt: "ISO timestamp"
 }
 ```
 
-字段约束：
+约束：
 
-- `date`：本地 ISO 日期 `YYYY-MM-DD`。
-- `startTime`、`endTime`：本地时间 `HH:mm`，结束时间必须晚于开始时间。
-- `repeatEvery`：1–14 的整数天。
-- `repeatCount`：1–20 的整数，表示包含首次活动在内的总次数；`null` 表示无限次。
-- `notes`：选填，最多 500 字符。
-- `endBefore`：内部拆分边界，排他日期；当天及以后不再属于该系列。
-- `repeatCount === 1` 表示仅发生一次。
+- `repeatEvery`：1–14 天。
+- `repeatCount`：1–20，包含第一次；`null` 表示无限。
+- `reminderEnabled`：默认 `false`。
+- `reminderMinutesBefore`：0–1440 分钟；0 表示开始时提醒。
+- 活动不能跨午夜。
+- 未来半年内活动时间不能重叠，首尾相接允许。
 
-所有加载数据都经过 `normalizeSeries()` 清洗；无效系列会被丢弃。修改数据模型时必须：
+所有读取都必须经过 `normalizeSeries()`。旧活动或旧备份缺少提醒字段时，归一化为“不提醒、提前 5 分钟”。
 
-1. 保持旧数据可读，或编写可逆迁移。
-2. 更新本文件的数据模型和业务规则。
-3. 为兼容、边界和迁移行为添加测试。
+## 重复、编辑和删除
 
-## 日期与半年窗口
+活动系列每 `repeatEvery` 天发生一次，第一次计入 `repeatCount`。
 
-- 所有日期都按设备本地时间解释。
-- 可用窗口从今天开始。
-- 结束日期为“同一日期加 6 个日历月，再减 1 天”。
-- 日历日期差使用 UTC 年月日中间值计算，避免夏令时导致整数天偏差。
-- 只能显示窗口内发生日期；无限重复规则本身可以继续存在。
-- 月视图和外层导航都被限制在窗口内。
+编辑或删除某个发生日期时：
 
-日期逻辑优先放入 `date-utils.js`，不要在渲染函数中重复计算。
+- 第一次发生：修改或删除整个系列。
+- 中间发生：原系列用 `endBefore` 截断，从所选日期创建新系列或只截断删除。
+- 无限系列在查询时按范围计算，禁止展开成无限数组。
 
-## 重复模型
+相关逻辑位于 `schedule.js`。不要改变为“只修改单次”，除非用户明确要求。
 
-活动系列从一个起始日期开始，每隔 `repeatEvery` 天产生一次发生：
+## 冲突
+
+`findScheduleConflict()` 验证普通表单保存。
+`findConflictWithinRange()` 验证导入备份。
+
+冲突条件：
 
 ```text
-第 0 次：date
-第 1 次：date + repeatEvery
-第 2 次：date + 2 * repeatEvery
-...
+newStart < existingEnd && newEnd > existingStart
 ```
 
-- 有限次数包含第一次，所以 `repeatCount = 3` 产生 3 次。
-- 无限次数在查询时只计算请求日期范围内，绝不把无限系列展开成无限数组。
-- `endBefore` 将系列限制为严格早于该日期的发生。
-- 半年窗口之外的无限重复不渲染。
-- 每个系列同一天最多产生一次；当前版本不支持一天内同系列的多次发生。
+冲突保证只覆盖当前未来半年窗口。不要对外声称已完成半年以外的验证。
 
-## 编辑、拆分和删除
+## 备份
 
-用户编辑某个发生日期时，产品规则是“修改本次及以后”：
+备份模块为 `backup.js`：
 
-- 编辑系列第一次发生时，直接替换原系列。
-- 编辑中间发生时，原系列通过 `endBefore` 截断在所选日期之前。
-- 从所选日期开始创建新系列。
-- 删除中间发生时，原系列同样通过 `endBefore` 截断。
-- 删除第一次发生时，删除整个系列。
-- 活动页中的已结束项目可以整项删除。
+```json
+{
+  "format": "daily-route-backup",
+  "version": 1,
+  "appVersion": "0.2.0",
+  "exportedAt": "ISO timestamp",
+  "eventCount": 1,
+  "events": []
+}
+```
 
-拆分后可能出现多个独立系列，这是预期行为，不应擅自自动合并。
+规则：
 
-## 冲突规则
+- 不包含账户、密码哈希、盐或会话状态。
+- 导入前显示活动数量并确认。
+- 导入替换当前活动，不替换账户。
+- 导入活动必须全部可归一化，且未来半年内不能重叠。
+- 导入后重新同步提醒。
 
-使用 `findScheduleConflict()` 检查候选系列和现有系列在半年窗口内的发生日期。
+## 提醒
 
-- 两个时间段满足 `newStart < existingEnd` 且 `newEnd > existingStart` 时冲突。
-- 首尾刚好相接不算冲突，例如 `14:30–15:50` 与 `15:50–16:30`。
-- 编辑系列时忽略该系列自身，避免误报。
-- 冲突会阻止保存，并显示日期、时间和冲突活动名称。
-- 当前保证范围是未来半年；不要对外声称已验证半年之外的无限序列。
+提醒只在安卓端显示和执行。
 
-## 视图架构
+- 新活动默认关闭提醒。
+- 开启时默认提前 5 分钟，可改为 0–1440。
+- 每次发生只安排一次通知。
+- 同一系列的未来发生共用同一提醒设置。
+- 只调度当前未来半年内、提醒时间尚未过去的 occurrence。
+- 使用稳定 31 位整数 ID，避免重新同步产生重复。
+- 通知 extra 包含 `kind`、`seriesId`、`occurrenceDate`。
+- 点击通知进入对应日期并滚动到活动。
 
-### 今天
+同步触发点：
 
-- 00:00–24:00 纵向时间轴。
-- 每 30 分钟显示刻度和标签。
-- 活动块按分钟定位。
-- 重叠活动使用列布局并排显示。
-- 时间轴自动滚动到当前时间或最早活动附近。
-- 点击活动打开编辑表单。
+- 登录、冷启动、应用恢复。
+- 新增、编辑、删除活动。
+- 导入备份。
+- 提醒开关或时间变更。
 
-### 本周
+Capacitor 8.3 默认尝试精确提醒并可能打开“闹钟和提醒”设置。本项目必须为每个提醒显式设置：
 
-- 周一至周日。
-- 当前周中过去日期不可查看，这是半年限制的一部分。
-- 每天显示活动时间与名称。
-- 点击日期进入日视图，点击活动直接编辑。
+```js
+isExactNotification: false
+```
 
-### 本月
+这是“不申请精确闹钟权限”的实现前提，不要删除。
 
-- 点击日期进入该日。
-- 每天使用 12 个占用槽，每槽代表 2 小时。
-- 占用槽只表示对应两小时内存在活动，不表示活动持续了完整两小时。
-- 月历导航被限制在半年窗口。
+权限不足时允许保存活动，但界面必须说明提醒可能无法送达。安卓系统仍可能延迟非精确提醒几分钟。
 
-### 活动
+## Android 工程
 
-- 进行中：未来半年内仍有发生。
-- 已结束：未来半年内没有发生。
-- 进行中按最近发生日期升序排序。
-- 支持按活动名称搜索。
-- 点击进行中活动直接打开“本次及以后”的编辑器。
-- 已结束活动允许直接删除，但仍需确认。
+- 应用 ID：`com.snowwind114.dailyroute`
+- 应用名：每日安排
+- `versionCode`：2
+- `versionName`：0.2.0
+- Capacitor webDir：`www`
+- 本地 SDK：`C:\Users\Administrator\AppData\Local\Android\Sdk`
+- JDK：`E:\Android\Android Studio\jbr`
+- Gradle：8.14.3
+- Maven 镜像：阿里云 Google/Public/Gradle Plugin
+- 安卓图标和启动图由 `scripts/generate-android-icons.ps1` 从 `icons/icon-512.png` 生成。
 
-## PWA 与缓存
+最终权限策略：
 
-- `manifest.webmanifest` 和 `sw.js` 必须使用站点相对路径，保证 GitHub Pages 子路径可用。
-- Service Worker 对导航使用网络优先、离线回退；静态资源也优先取网络并回写缓存。
-- 修改核心静态文件时，检查 `sw.js` 中的 `CACHE_NAME` 是否需要升级。
-- 发布后至少验证：首页、`manifest.webmanifest`、`sw.js`、图标和一次离线重载。
-- 浏览器本地数据与网址绑定。修改仓库名、Pages 路径或自定义域名会产生新的数据空间。
+- 保留 `POST_NOTIFICATIONS`。
+- 保留 `RECEIVE_BOOT_COMPLETED`。
+- 移除 `SCHEDULE_EXACT_ALARM`。
+- 移除 `WAKE_LOCK`。
+- 移除 `INTERNET`。
+- 关闭 Android 系统备份。
+
+修改插件或 Capacitor 版本后，必须重新检查合并后的 APK 清单，不能只看源 Manifest。
+
+## 构建命令
+
+安装与静态检查：
+
+```powershell
+npm install
+npm test
+npm run check
+```
+
+同步网页资源到 Android：
+
+```powershell
+npm run cap:sync
+```
+
+构建 APK：
+
+```powershell
+$env:JAVA_HOME = 'E:\Android\Android Studio\jbr'
+cd .\android
+.\gradlew.bat assembleDebug --no-daemon
+.\gradlew.bat assembleRelease --no-daemon
+```
+
+输出：
+
+```text
+android/app/build/outputs/apk/debug/app-debug.apk
+android/app/build/outputs/apk/release/app-release.apk
+```
+
+## 签名
+
+长期 release 签名材料：
+
+```text
+android/daily-route-release.jks
+android/keystore.properties
+```
+
+两者均被 Git 忽略：
+
+- 不要打印、提交或上传密码。
+- 用户必须单独备份这两个文件。
+- 相同 `applicationId` 且相同签名才能覆盖升级并保留应用数据。
+- 更换签名后，旧 APK 必须卸载，应用数据会丢失。
 
 ## 测试策略
 
-`schedule.js` 和 `date-utils.js` 是主要自动测试接缝。新增或修改以下逻辑时必须先补回归测试：
+自动测试覆盖：
 
-- 日期加减、月份边界和半年窗口。
-- 有限/无限重复发生日期。
-- 冲突与首尾相接。
-- 系列拆分、截断、删除“本次及以后”和最近发生日期。
-- 2 小时占用槽。
-- 输入范围、跨午夜和字段校验。
+- 日期窗口、重复、冲突、系列拆分和删除。
+- PBKDF2 注册、正确/错误密码、修改密码。
+- 安卓 v2 存储归一化、空数据和损坏数据。
+- 备份往返、数量校验和敏感字段缺失。
+- 提醒日期计算、已过提醒跳过和关闭提醒。
+- 导入冲突检查。
 
-界面检查不能只依赖单元测试。修改 UI 后至少验证：
+手动验证：
 
-1. 390 px 左右的手机宽度无横向溢出。
-2. 四个底部导航都可操作。
-3. 添加、编辑、删除和冲突错误正常。
-4. 本周、本月和活动页与日视图数据一致。
-5. 断网重载后应用仍能打开。
+1. 390 px 手机宽度无横向溢出。
+2. 网页不出现账户和提醒控件。
+3. 网页可下载 APK、导出 JSON、编辑活动。
+4. Debug APK 注册、重启保持登录、添加提醒活动。
+5. 系统待发送队列中存在本地通知。
+6. 关闭应用后收到通知，点击后定位到活动。
+7. 备份分享面板可打开，JSON 可重新导入。
+8. 相同签名的新 Release 可以覆盖安装并保留账户与活动。
+9. 重启手机后提醒可恢复。
 
-## 发布与 Git 工作流
+## GitHub Pages 与 Release
 
-- 仓库的 `main` 分支根目录就是发布目录。
-- GitHub Pages 的 Source 应保持为 `Deploy from a branch`、`main`、`/(root)`。
-- 静态文件修改后直接推送到 `main`，GitHub Pages 自动发布。
-- 不修改仓库名称、默认网址或发布目录，除非同时处理浏览器数据迁移问题。
-- 不提交 `artifacts/`、`dist/`、`daily-route-site.zip`、`node_modules` 或本地数据。
+- 网页从 `main` 根目录发布，Pages 配置保持 `Deploy from a branch`、`main`、`/(root)`。
+- APK 作为 GitHub Release 资产发布，固定文件名必须为 `daily-route.apk`。
+- 网页下载链接依赖 GitHub 的 `releases/latest/download/daily-route.apk`。
+- 不自动更新 APK；用户从网页重新下载覆盖安装。
+- 不改变仓库名、Pages 路径或应用 ID，除非同时说明数据影响。
 
-推荐提交前检查：
+## 提交前检查
 
 ```powershell
-git status
-node --test
+npm test
+npm run check
 git diff --check
+git status
 ```
 
-推荐发布后检查：
+发布 APK 前还需：
 
 ```powershell
-Invoke-WebRequest -Uri 'https://snow-wind-114.github.io/daily-route/' -UseBasicParsing
+npm run cap:sync
+$env:JAVA_HOME = 'E:\Android\Android Studio\jbr'
+cd .\android
+.\gradlew.bat assembleRelease --no-daemon
 ```
 
-## 每次 GitHub 提交的强制流程
+并检查：
 
-1. 完成代码或文档修改。
-2. 运行与改动对应的测试和手动验证。
-3. 更新本文件的版本号、版本日期、最近变更和最近验证。
-4. 如果架构、数据模型、业务规则或部署方式改变，同时更新相应章节。
-5. 将代码与本文件放在同一个 Git 提交中。
-6. 推送后检查 GitHub Pages 是否发布成功。
-
-只有在本文件没有准确变化时才可以保持版本号不变；即便如此，日期和验证结果也必须更新。禁止代码已经变化而本文件仍描述旧架构。
+- `aapt2 dump permissions` 只显示允许的权限。
+- `apksigner verify --verbose --print-certs` 通过。
+- 不提交 `www/`、`node_modules/`、Gradle 构建产物、keystore 或 `keystore.properties`。
 
 ## 当前已知限制
 
-- 没有提醒或锁屏通知。
-- 没有本地备份、导入、导出或删除撤销。
-- 不能只跳过一次重复活动。
-- 重复模型只有“每 N 天”，没有“每周几”或工作日规则。
-- 没有历史记录、完成状态或实际用时。
-- 没有账号、云同步或多设备同步。
-- 冲突保证只覆盖未来半年。
+- 网页版不登录、不提醒，也不与安卓版同步。
+- 安卓版通知为非精确调度，可能延迟。
+- 提醒最多调度当前未来半年内的 occurrence；半年之后需要重新打开应用扩展窗口。
+- 不记录完成状态、历史或实际用时。
+- 不能只跳过某一次发生。
+- 重复模型只有“每 N 天”，没有“每周几”。
 - 月历占用精度为 2 小时。
-- 活动备注在浏览视图中不可见。
-
-这些限制是当前产品边界，不应被文档、界面或提交说明误写成已支持。
+- 活动备注在主要浏览视图中不可见。
+- 账户密码不加密活动内容。
+- 尚未在真实手机完成通知、点击、重启恢复和覆盖升级验收。
