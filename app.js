@@ -83,8 +83,8 @@ import {
   syncNativeWidgetSnapshot,
 } from "./native-widget.js";
 
-const APP_VERSION = "0.3.0";
-const APP_VERSION_CODE = 3;
+const APP_VERSION = "0.3.1";
+const APP_VERSION_CODE = 4;
 const SLOT_HEIGHT = 44;
 const PIXELS_PER_MINUTE = SLOT_HEIGHT / 30;
 const nativeApp = isNativeApp();

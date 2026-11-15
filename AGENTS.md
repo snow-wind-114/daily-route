@@ -4,8 +4,8 @@
 
 ## 版本与发布地址
 
-- 当前版本：`v0.3`
-- Android：`versionCode=3`、`versionName=0.3.0`
+- 当前版本：`v0.3.1`
+- Android：`versionCode=4`、`versionName=0.3.1`
 - 版本日期：`2026-11-15`
 - 网页：<https://snow-wind-114.github.io/daily-route/>
 - 固定 APK：
@@ -18,7 +18,7 @@
 
 每次提交 GitHub 时，必须在同一提交更新本文件。
 
-- 文档修正、兼容性 bugfix、内部重构：`v0.3.1`、`v0.3.2`……
+- 文档修正、兼容性 bugfix、内部重构：`v0.3.2`、`v0.3.3`……
 - 新增用户可见功能、数据结构或重要交互：`v0.4`、`v0.5`……
 - 正式稳定版或不兼容的数据/URL 变化：`v1.0`、`v2.0`……
 - 每个提交至少更新“当前版本”“版本日期”“最近变更”和“最近验证”。
@@ -27,6 +27,7 @@
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| `v0.3.1` | 2026-11-15 | 修复桌面组件使用 RemoteViews 不允许的 `<View>` 导致主屏加载失败 |
 | `v0.3` | 2026-11-15 | 普通通知/精确闹钟、单次调整、系列暂停、桌面组件、恢复点、更新检查和 v3 存储迁移 |
 | `v0.2` | 2026-11-15 | 安卓本地账户、基础非精确提醒、活动导入导出、APK 下载 |
 | `v0.1` | 2026-11-15 | 离线日程 MVP、GitHub Pages 与项目指南 |
@@ -36,13 +37,13 @@
 - `node --test`：36 项通过。
 - `node --check` 与统一版本检查：通过。
 - Android Debug 构建：通过。
-- Android Release 构建：通过，`versionCode=3`、`versionName=0.3.0`。
+- Android Release 构建：通过，`versionCode=4`、`versionName=0.3.1`。
 - Release APK：v2 签名通过，证书 SHA-256 与 v0.2 一致。
 - Release 权限：INTERNET、VIBRATE、RECEIVE_BOOT_COMPLETED、WAKE_LOCK、POST_NOTIFICATIONS、SCHEDULE_EXACT_ALARM。
 - Android 模拟器：v0.2 覆盖升级到 v0.3 后账户、登录状态和活动保留。
 - Android 模拟器：普通活动提醒在后台按提前 5 分钟送达；通知渠道和高优先级闹钟渠道已创建。
 - Android 模拟器：账户面板、通知/闹钟权限状态、恢复点和更新入口可加载。
-- Android 系统：桌面组件 Provider 已注册；实际拖放组件仍需在真机或启动器手工验收。
+- Android 系统：桌面组件已实际拖放到启动器，能显示日期、当天活动和“进行中”标记。
 - 安卓 Chrome 手机视口：网页四个底部入口、预览提示和编辑弹窗无横向溢出；网页不显示提醒控件。
 
 ## 产品边界
@@ -373,8 +374,8 @@ allowWhileIdle: true
 ## Android 工程与构建
 
 - 包名：`com.snowwind114.dailyroute`
-- `versionCode`：3
-- `versionName`：0.3.0
+- `versionCode`：4
+- `versionName`：0.3.1
 - JDK：`E:\Android\Android Studio\jbr`
 - SDK：`C:\Users\Administrator\AppData\Local\Android\Sdk`
 - Gradle：8.14.3
