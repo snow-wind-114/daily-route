@@ -209,7 +209,7 @@ public class DailyRouteWidgetProvider extends AppWidgetProvider {
                 textId,
                 event.optString("startTime", "") +
                 "  " +
-                event.optString("title", "代办")
+                event.optString("title", "待办")
             );
             views.setOnClickPendingIntent(
                 textId,

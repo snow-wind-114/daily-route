@@ -16,8 +16,8 @@ import {
   validateTodoInput,
 } from "../activities.js";
 import {
-  PREVIOUS_NATIVE_STORAGE_KEY,
   NATIVE_STORAGE_KEY,
+  PREVIOUS_OLDER_NATIVE_STORAGE_KEY,
   migrateNativeState,
 } from "../app-state.js";
 import { createLocalAccount } from "../account.js";
@@ -199,14 +199,14 @@ test("archiving a regular series removes all future occurrences", () => {
   );
 });
 
-test("native v3 storage upgrades to v4 with categories and activity kinds", async () => {
+test("native v3 storage upgrades to v5 with categories and activity kinds", async () => {
   const storage = memoryStorage();
   const account = await createLocalAccount(
     { username: "小风", password: "secret123" },
     { iterations: 1000 },
   );
   storage.setItem(
-    PREVIOUS_NATIVE_STORAGE_KEY,
+    PREVIOUS_OLDER_NATIVE_STORAGE_KEY,
     JSON.stringify({
       version: 3,
       account,
@@ -227,7 +227,7 @@ test("native v3 storage upgrades to v4 with categories and activity kinds", asyn
   assert.ok(storage.getItem(NATIVE_STORAGE_KEY));
 });
 
-test("backup v4 includes categories and mixed kinds without account secrets", () => {
+test("backup v5 includes categories and mixed kinds without account secrets", () => {
   const categories = normalizeCategories({
     schedule: [{ id: "cat", name: "课程" }],
   });
@@ -238,7 +238,7 @@ test("backup v4 includes categories and mixed kinds without account secrets", ()
   });
   const text = JSON.stringify(backup);
   const parsed = parseBackup(text);
-  assert.equal(parsed.version, 4);
+  assert.equal(parsed.version, 5);
   assert.equal(parsed.events.length, 2);
   assert.equal(parsed.categories.schedule[0].name, "课程");
   assert.equal(text.includes("passwordHash"), false);

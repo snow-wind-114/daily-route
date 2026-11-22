@@ -97,15 +97,30 @@ import {
   scheduleTestReminder,
   syncScheduledNotifications,
 } from "./notifications.js";
-import { shareNativeBackup } from "./native-files.js";
+import {
+  shareNativeBackup,
+  shareNativeTextFile,
+} from "./native-files.js";
 import {
   addRecoveryPoint,
   clearRecoveryPoints,
   markManualExport,
   readLastManualExport,
   readRecoveryPoints,
+  removeReviewsBeforeYearFromRecovery,
   shouldRemindBackup,
 } from "./recovery.js";
+import {
+  DEFAULT_REVIEW_REMINDER,
+  REVIEW_TEXT_MAX,
+  buildReviewActivitySnapshot,
+  buildReviewMarkdown,
+  createReviewEntry,
+  hasReviewContent,
+  normalizeReviewEntries,
+  normalizeReviewReminder,
+  removeReviewsBeforeYear,
+} from "./review.js";
 import { checkForUpdate } from "./update-check.js";
 import {
   clearNativeWidgetSnapshot,
@@ -114,8 +129,8 @@ import {
   syncNativeWidgetSnapshot,
 } from "./native-widget.js";
 
-const APP_VERSION = "0.5.0";
-const APP_VERSION_CODE = 7;
+const APP_VERSION = "0.5.1";
+const APP_VERSION_CODE = 8;
 const SLOT_HEIGHT = 44;
 const PIXELS_PER_MINUTE = SLOT_HEIGHT / 30;
 const nativeApp = isNativeApp();
@@ -146,10 +161,12 @@ const elements = {
   weekView: document.querySelector("#weekView"),
   monthView: document.querySelector("#monthView"),
   activityView: document.querySelector("#activityView"),
+  reviewView: document.querySelector("#reviewView"),
   dayNavButton: document.querySelector("#dayNavButton"),
   weekNavButton: document.querySelector("#weekNavButton"),
   monthNavButton: document.querySelector("#monthNavButton"),
   activityNavButton: document.querySelector("#activityNavButton"),
+  reviewNavButton: document.querySelector("#reviewNavButton"),
   previousDayButton: document.querySelector("#previousDayButton"),
   nextDayButton: document.querySelector("#nextDayButton"),
   goTodayButton: document.querySelector("#goTodayButton"),
@@ -342,6 +359,56 @@ const elements = {
   currentCheckinMonth: document.querySelector("#currentCheckinMonth"),
   checkinMonthTitle: document.querySelector("#checkinMonthTitle"),
   checkinCalendarGrid: document.querySelector("#checkinCalendarGrid"),
+  checkinCalendarNote: document.querySelector("#checkinCalendarNote"),
+  previousReviewDayButton: document.querySelector("#previousReviewDayButton"),
+  nextReviewDayButton: document.querySelector("#nextReviewDayButton"),
+  goTodayReviewButton: document.querySelector("#goTodayReviewButton"),
+  reviewReminderField: document.querySelector("#reviewReminderField"),
+  reviewReminderToggle: document.querySelector("#reviewReminderToggle"),
+  reviewReminderTime: document.querySelector("#reviewReminderTime"),
+  reviewReminderStatus: document.querySelector("#reviewReminderStatus"),
+  reviewArchiveBanner: document.querySelector("#reviewArchiveBanner"),
+  reviewArchiveMessage: document.querySelector("#reviewArchiveMessage"),
+  openReviewArchiveButton: document.querySelector("#openReviewArchiveButton"),
+  reviewActivitySummary: document.querySelector("#reviewActivitySummary"),
+  reviewScheduleList: document.querySelector("#reviewScheduleList"),
+  reviewTodoList: document.querySelector("#reviewTodoList"),
+  reviewCheckinList: document.querySelector("#reviewCheckinList"),
+  reviewForm: document.querySelector("#reviewForm"),
+  reviewSummary: document.querySelector("#reviewSummary"),
+  reviewReflection: document.querySelector("#reviewReflection"),
+  reviewInspiration: document.querySelector("#reviewInspiration"),
+  reviewSaveState: document.querySelector("#reviewSaveState"),
+  saveReviewButton: document.querySelector("#saveReviewButton"),
+  reviewReadonlyNote: document.querySelector("#reviewReadonlyNote"),
+  unsavedReviewDialog: document.querySelector("#unsavedReviewDialog"),
+  cancelLeaveReviewButton: document.querySelector("#cancelLeaveReviewButton"),
+  discardReviewChangesButton: document.querySelector(
+    "#discardReviewChangesButton",
+  ),
+  reviewArchiveDialog: document.querySelector("#reviewArchiveDialog"),
+  reviewArchiveDialogMessage: document.querySelector(
+    "#reviewArchiveDialogMessage",
+  ),
+  exportReviewArchiveButton: document.querySelector(
+    "#exportReviewArchiveButton",
+  ),
+  discardReviewArchiveButton: document.querySelector(
+    "#discardReviewArchiveButton",
+  ),
+  deferReviewArchiveButton: document.querySelector(
+    "#deferReviewArchiveButton",
+  ),
+  reviewArchiveConfirm: document.querySelector("#reviewArchiveConfirm"),
+  reviewArchiveConfirmMessage: document.querySelector(
+    "#reviewArchiveConfirmMessage",
+  ),
+  confirmReviewArchiveButton: document.querySelector(
+    "#confirmReviewArchiveButton",
+  ),
+  cancelReviewArchiveConfirmButton: document.querySelector(
+    "#cancelReviewArchiveConfirmButton",
+  ),
   categoryDialog: document.querySelector("#categoryDialog"),
   closeCategoryDialog: document.querySelector("#closeCategoryDialog"),
   categoryKindSelect: document.querySelector("#categoryKindSelect"),
@@ -362,6 +429,8 @@ const state = {
   events: initialData.events,
   categories: initialData.categories,
   yearMigrationCompletedFor: initialData.yearMigrationCompletedFor,
+  reviewEntries: initialData.reviewEntries,
+  reviewReminder: initialData.reviewReminder,
   account: initialData.account,
   authenticated: initialData.authenticated,
   storageCorrupt: initialData.storageCorrupt,
@@ -381,6 +450,8 @@ const state = {
   pendingImportEvents: null,
   pendingImportCategories: null,
   pendingImportMigrationYear: null,
+  pendingImportReviewEntries: null,
+  pendingImportReviewReminder: null,
   pendingSeriesEdit: null,
   pendingPause: null,
   pendingUpdate: null,
@@ -388,7 +459,13 @@ const state = {
   archiveMode: false,
   archiveYear: Number(todayISO().slice(0, 4)),
   checkinCalendarId: null,
+  checkinEditableDate: null,
   checkinMonthCursor: startOfMonth(todayISO()),
+  reviewDate: todayISO(),
+  reviewDirty: false,
+  reviewLoadedDate: null,
+  pendingReviewNavigation: null,
+  pendingReviewArchiveMode: null,
   migrationSelections: new Map(),
 };
 
@@ -411,6 +488,8 @@ function loadInitialData() {
         categories: loaded.state.categories,
         yearMigrationCompletedFor:
           loaded.state.yearMigrationCompletedFor,
+        reviewEntries: loaded.state.reviewEntries,
+        reviewReminder: loaded.state.reviewReminder,
         account: loaded.state.account,
         authenticated: loaded.state.sessionActive,
         storageCorrupt: false,
@@ -423,6 +502,8 @@ function loadInitialData() {
         categories: loaded.state.categories,
         yearMigrationCompletedFor:
           loaded.state.yearMigrationCompletedFor,
+        reviewEntries: loaded.state.reviewEntries,
+        reviewReminder: loaded.state.reviewReminder,
         account: loaded.state.account,
         authenticated: loaded.state.sessionActive,
         storageCorrupt: false,
@@ -433,6 +514,8 @@ function loadInitialData() {
       events: [],
       categories: { schedule: [], todo: [], checkin: [] },
       yearMigrationCompletedFor: Number(todayISO().slice(0, 4)),
+      reviewEntries: [],
+      reviewReminder: normalizeReviewReminder(DEFAULT_REVIEW_REMINDER),
       account: null,
       authenticated: false,
       storageCorrupt: loaded.status === "corrupt",
@@ -445,6 +528,8 @@ function loadInitialData() {
       events: loaded.events,
       categories: loaded.categories,
       yearMigrationCompletedFor: loaded.yearMigrationCompletedFor,
+      reviewEntries: loaded.reviewEntries,
+      reviewReminder: loaded.reviewReminder,
       account: null,
       authenticated: true,
       storageCorrupt: false,
@@ -455,6 +540,8 @@ function loadInitialData() {
       events: [],
       categories: { schedule: [], todo: [], checkin: [] },
       yearMigrationCompletedFor: Number(todayISO().slice(0, 4)),
+      reviewEntries: [],
+      reviewReminder: normalizeReviewReminder(DEFAULT_REVIEW_REMINDER),
       account: null,
       authenticated: true,
       storageCorrupt: false,
@@ -474,12 +561,16 @@ function persistEvents() {
         events: state.events,
         categories: state.categories,
         yearMigrationCompletedFor: state.yearMigrationCompletedFor,
+        reviewEntries: state.reviewEntries,
+        reviewReminder: state.reviewReminder,
       });
     } else {
       writeWebState({
         events: state.events,
         categories: state.categories,
         yearMigrationCompletedFor: state.yearMigrationCompletedFor,
+        reviewEntries: state.reviewEntries,
+        reviewReminder: state.reviewReminder,
       });
     }
     if (nativeApp && state.authenticated) {
@@ -572,6 +663,7 @@ async function refreshNativeNotifications() {
           Number(todayISO().slice(0, 4)),
           state.yearMigrationCompletedFor,
         )}-12-31`,
+        reviewReminder: state.reviewReminder,
       });
   } catch (error) {
     console.error("同步活动提醒失败", error);
@@ -688,6 +780,7 @@ function configurePlatformControls() {
   elements.reminderField.hidden = !nativeApp;
   elements.todoReminderField.hidden = !nativeApp;
   elements.checkinReminderField.hidden = !nativeApp;
+  elements.reviewReminderField.hidden = !nativeApp;
 }
 
 function openOccurrenceFromExternal({
@@ -736,7 +829,9 @@ function openOccurrenceFromExternal({
     state.view = "day";
     render();
     if (!isActivityArchived(series)) {
-      openCheckinCalendar(series);
+      openCheckinCalendar(series, todayISO(), {
+        editableDate: todayISO(),
+      });
     }
     return;
   }
@@ -765,6 +860,13 @@ function handleNotificationAction({
   effectiveDate,
   activityKind,
 }) {
+  if (activityKind === "dailyReview") {
+    state.reviewDate = todayISO();
+    state.reviewLoadedDate = null;
+    state.view = "review";
+    render();
+    return;
+  }
   openOccurrenceFromExternal({
     seriesId,
     date: effectiveDate || occurrenceDate,
@@ -827,6 +929,10 @@ async function handleAuthSubmit(event) {
       state.events = [];
       state.categories = { schedule: [], todo: [], checkin: [] };
       state.yearMigrationCompletedFor = Number(todayISO().slice(0, 4));
+      state.reviewEntries = [];
+      state.reviewReminder = normalizeReviewReminder(
+        DEFAULT_REVIEW_REMINDER,
+      );
       state.authenticated = true;
       state.storageCorrupt = false;
       persistEvents();
@@ -851,6 +957,13 @@ async function handleAuthSubmit(event) {
     void refreshNativeNotifications();
     void syncNativeWidgetSnapshot(state.events);
     void handleWidgetLaunch();
+    requestAnimationFrame(() => {
+      if (migrationIsMandatory()) {
+        openMigrationDialog();
+      } else {
+        maybePromptReviewArchive();
+      }
+    });
   } catch (error) {
     elements.authError.textContent = error.message;
     elements.authError.hidden = false;
@@ -900,12 +1013,17 @@ function renderBackupStatus() {
 }
 
 function snapshotBefore(reason) {
-  if (nativeApp && state.events.length > 0) {
+  if (
+    nativeApp &&
+    (state.events.length > 0 || state.reviewEntries.length > 0)
+  ) {
     addRecoveryPoint(
       {
         events: state.events,
         categories: state.categories,
         yearMigrationCompletedFor: state.yearMigrationCompletedFor,
+        reviewEntries: state.reviewEntries,
+        reviewReminder: state.reviewReminder,
       },
       reason,
     );
@@ -979,6 +1097,8 @@ async function confirmAccountReset() {
     state.events = [];
     state.categories = { schedule: [], todo: [], checkin: [] };
     state.yearMigrationCompletedFor = Number(todayISO().slice(0, 4));
+    state.reviewEntries = [];
+    state.reviewReminder = normalizeReviewReminder(DEFAULT_REVIEW_REMINDER);
     state.storageCorrupt = false;
     state.notificationStatus = null;
     elements.resetAccountDialog.close();
@@ -994,9 +1114,13 @@ function backupFilename() {
   return `daily-route-backup-${todayISO()}.json`;
 }
 
-function downloadTextFile(filename, contents) {
+function downloadTextFile(
+  filename,
+  contents,
+  mime = "application/json;charset=utf-8",
+) {
   const blob = new Blob([contents], {
-    type: "application/json;charset=utf-8",
+    type: mime,
   });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -1014,6 +1138,8 @@ async function exportActivities() {
       appVersion: APP_VERSION,
       categories: state.categories,
       yearMigrationCompletedFor: state.yearMigrationCompletedFor,
+      reviewEntries: state.reviewEntries,
+      reviewReminder: state.reviewReminder,
     });
     const contents = JSON.stringify(backup, null, 2);
     const filename = backupFilename();
@@ -1064,13 +1190,16 @@ async function handleImportFile(event) {
     state.pendingImportCategories = backup.categories;
     state.pendingImportMigrationYear =
       backup.yearMigrationCompletedFor;
+    state.pendingImportReviewEntries = backup.reviewEntries;
+    state.pendingImportReviewReminder = backup.reviewReminder;
     const incoming = summarizeEvents(backup.events);
     elements.importDialogMessage.textContent =
       `将用 ${backup.eventCount} 项活动替换当前 ${state.events.length} 项活动。` +
       `导入内容含 ${incoming.notificationCount} 个通知、${incoming.alarmCount} 个闹钟、` +
-      `其中 ${incoming.scheduleCount} 个定期、${incoming.todoCount} 个代办、` +
+      `其中 ${incoming.scheduleCount} 个定期、${incoming.todoCount} 个待办、` +
       `${incoming.checkinCount} 个打卡；${incoming.pausedCount} 个暂停项目和 ` +
-      `${incoming.overrideCount} 次单次调整。账户与密码不会改变。`;
+      `${incoming.overrideCount} 次单次调整；${backup.reviewCount} 天回顾。` +
+      "账户与密码不会改变。";
     elements.importDialog.showModal();
   } catch (error) {
     showToast(error.message || "无法读取备份文件");
@@ -1091,9 +1220,17 @@ function confirmImport() {
   state.yearMigrationCompletedFor =
     state.pendingImportMigrationYear ??
     state.yearMigrationCompletedFor;
+  state.reviewEntries = normalizeReviewEntries(
+    state.pendingImportReviewEntries,
+  );
+  state.reviewReminder = normalizeReviewReminder(
+    state.pendingImportReviewReminder,
+  );
   state.pendingImportEvents = null;
   state.pendingImportCategories = null;
   state.pendingImportMigrationYear = null;
+  state.pendingImportReviewEntries = null;
+  state.pendingImportReviewReminder = null;
   persistEvents();
   elements.importDialog.close();
   state.view = "day";
@@ -1121,7 +1258,11 @@ function renderRecoveryDialog() {
       const restore = document.createElement("button");
       row.className = "recovery-row";
       title.textContent = point.reason;
-      detail.textContent = `${formatStoredTime(point.createdAt)} · ${point.events.length} 项活动`;
+      detail.textContent =
+        `${formatStoredTime(point.createdAt)} · ${point.events.length} 项活动` +
+        (point.reviewEntries.length > 0
+          ? ` · ${point.reviewEntries.length} 天回顾`
+          : "");
       restore.type = "button";
       restore.className = "secondary-button";
       restore.textContent = "恢复";
@@ -1131,6 +1272,8 @@ function renderRecoveryDialog() {
         state.categories = point.categories;
         state.yearMigrationCompletedFor =
           point.yearMigrationCompletedFor;
+        state.reviewEntries = point.reviewEntries;
+        state.reviewReminder = point.reviewReminder;
         persistEvents();
         elements.recoveryDialog.close();
         state.view = "day";
@@ -1253,6 +1396,8 @@ function setView(view) {
     state.weekCursor = startOfWeek(todayISO());
   } else if (view === "month") {
     state.monthCursor = startOfMonth(state.selectedDate);
+  } else if (view === "review") {
+    state.reviewDate = todayISO();
   }
 
   state.view = view;
@@ -1303,6 +1448,7 @@ function render(options = {}) {
   elements.dayView.hidden = state.view !== "day";
   elements.weekView.hidden = state.view !== "week";
   elements.monthView.hidden = state.view !== "month";
+  elements.reviewView.hidden = state.view !== "review";
   elements.activityView.hidden = state.view !== "activity";
   elements.dayNavButton.classList.toggle("is-active", state.view === "day");
   elements.weekNavButton.classList.toggle("is-active", state.view === "week");
@@ -1310,6 +1456,10 @@ function render(options = {}) {
   elements.activityNavButton.classList.toggle(
     "is-active",
     state.view === "activity",
+  );
+  elements.reviewNavButton.classList.toggle(
+    "is-active",
+    state.view === "review",
   );
   elements.dayNavButton.setAttribute(
     "aria-current",
@@ -1327,6 +1477,14 @@ function render(options = {}) {
     "aria-current",
     state.view === "activity" ? "page" : "false",
   );
+  elements.reviewNavButton.setAttribute(
+    "aria-current",
+    state.view === "review" ? "page" : "false",
+  );
+  const hideAddActions = state.view === "review";
+  elements.addFab.hidden =
+    hideAddActions || (nativeApp && !state.authenticated);
+  elements.addTopButton.hidden = hideAddActions;
 
   if (state.view === "day") {
     renderDay(window, options);
@@ -1334,6 +1492,8 @@ function render(options = {}) {
     renderWeek(window);
   } else if (state.view === "month") {
     renderMonth(window);
+  } else if (state.view === "review") {
+    renderReview();
   } else {
     renderActivities(window);
   }
@@ -1356,7 +1516,7 @@ function renderDay(window, options = {}) {
     occurrences.length + dueTodos + shortcutCount.todo + shortcutCount.checkin ===
     0
       ? "暂无活动"
-      : `${occurrences.length} 项定期 · ${dueTodos + shortcutCount.overdue} 项代办 · ${shortcutCount.checkin} 项打卡`;
+      : `${occurrences.length} 项定期 · ${dueTodos + shortcutCount.overdue} 项待办 · ${shortcutCount.checkin} 项打卡`;
 
   elements.previousDayButton.disabled =
     state.selectedDate <= window.startDate;
@@ -1419,7 +1579,7 @@ function renderDayShortcuts(isToday) {
     "todo",
   );
   appendSection(
-    "逾期代办",
+    "逾期待办",
     overdue.map((activity) => createTodoShortcut(activity, true)),
     "overdue",
   );
@@ -1435,7 +1595,14 @@ function renderDayShortcuts(isToday) {
       button.disabled = isDatePausedForCheckin(
         activity,
         state.selectedDate,
-      );
+      ) || !isToday;
+      if (!isToday) {
+        button.setAttribute(
+          "aria-label",
+          `${activity.title}，${checked ? "已打卡" : "未打卡"}；历史记录只读`,
+        );
+        return button;
+      }
       button.addEventListener("click", () => {
         try {
           state.events = state.events.map((event) =>
@@ -1492,7 +1659,7 @@ function createTodoShortcut(activity, overdue) {
 }
 
 function completeTodo(activity) {
-  snapshotBefore("完成代办前");
+  snapshotBefore("完成待办前");
   state.events = archiveActivity(
     state.events,
     activity.id,
@@ -1500,7 +1667,7 @@ function completeTodo(activity) {
   );
   persistEvents();
   render();
-  showToast("代办已完成并归档");
+  showToast("待办已完成并归档");
 }
 
 function renderTimeline(occurrences, isToday) {
@@ -1695,7 +1862,7 @@ function renderWeek(window) {
   elements.viewTitle.textContent =
     `${formatShortDate(weekStart)}–${formatShortDate(weekEnd)}`;
   elements.viewSummary.textContent =
-    `${occurrences.length} 项定期 · ${overdue.length + dueCount} 项代办 · ` +
+    `${occurrences.length} 项定期 · ${overdue.length + dueCount} 项待办 · ` +
     `${activeCheckins.length} 项打卡`;
   elements.previousWeekButton.disabled = weekStart <= firstWeek;
   elements.nextWeekButton.disabled = weekStart >= lastWeek;
@@ -1823,7 +1990,7 @@ function createWeekAuxiliary(
     const list = document.createElement("div");
     panel.className = "week-overview-panel is-todo";
     heading.className = "week-overview-heading";
-    heading.textContent = "本周代办";
+    heading.textContent = "本周待办";
     list.className = "week-overview-list";
     if (overdue.length > 0) {
       const overdueLabel = document.createElement("div");
@@ -1964,7 +2131,7 @@ function renderMonth(window) {
         dayOccupancy
           ? `，占用时间 ${describeOccupiedSlots(dayOccupancy.slots)}`
           : ""
-      }${todoCount > 0 ? `，${todoCount} 个代办截止` : ""}${
+      }${todoCount > 0 ? `，${todoCount} 个待办截止` : ""}${
         enabled ? "" : "，不在可查看范围"
       }`,
     );
@@ -2013,6 +2180,204 @@ function renderMonth(window) {
   }
 
   elements.monthGrid.replaceChildren(fragment);
+}
+
+function reviewEntryForDate(date) {
+  return (
+    state.reviewEntries.find((entry) => entry.date === date) ?? null
+  );
+}
+
+function renderReviewSnapshotList(list, items, detail, isDone = () => false) {
+  if (items.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "review-snapshot-empty";
+    empty.textContent = "无";
+    list.replaceChildren(empty);
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  for (const item of items) {
+    const row = document.createElement("div");
+    const title = document.createElement("span");
+    const meta = document.createElement("small");
+    row.className = "review-snapshot-row";
+    row.classList.toggle("is-done", isDone(item));
+    title.textContent = item.title;
+    meta.textContent = detail(item);
+    row.append(title, meta);
+    fragment.append(row);
+  }
+  list.replaceChildren(fragment);
+}
+
+function renderReviewSnapshot(snapshot, date) {
+  const schedules = snapshot?.schedules ?? [];
+  const todos = snapshot?.todos ?? [];
+  const checkins = snapshot?.checkins ?? [];
+  const total = schedules.length + todos.length + checkins.length;
+  elements.reviewActivitySummary.textContent =
+    total === 0
+      ? "这一天没有可汇总的活动"
+      : `${schedules.length} 项定期 · ${todos.length} 项待办 · ${checkins.length} 项打卡`;
+  renderReviewSnapshotList(
+    elements.reviewScheduleList,
+    schedules,
+    (item) => `${item.startTime}–${item.endTime}`,
+  );
+  renderReviewSnapshotList(
+    elements.reviewTodoList,
+    todos,
+    (item) =>
+      item.status === "completed"
+        ? "已完成"
+        : item.status === "archived"
+          ? "已归档"
+          : "未完成",
+    (item) => item.status === "completed",
+  );
+  renderReviewSnapshotList(
+    elements.reviewCheckinList,
+    checkins,
+    (item) => (item.checked ? "已打卡" : "未打卡"),
+    (item) => item.checked,
+  );
+  elements.viewSummary.textContent =
+    total === 0
+      ? formatDayTitle(date)
+      : `${schedules.length} 项定期 · ${todos.length} 项待办 · ${checkins.length} 项打卡`;
+}
+
+function renderReview() {
+  const today = todayISO();
+  const currentYear = Number(today.slice(0, 4));
+  const yearStart = `${currentYear}-01-01`;
+  if (state.reviewDate > today || !state.reviewDate.startsWith(`${currentYear}-`)) {
+    state.reviewDate = today;
+  }
+  const date = state.reviewDate;
+  const entry = reviewEntryForDate(date);
+  const editable = date === today;
+  const snapshot =
+    entry?.activitySnapshot ??
+    (editable ? buildReviewActivitySnapshot(state.events, date) : null);
+
+  elements.viewKicker.textContent = editable ? "今日回顾" : "回顾记录";
+  elements.viewTitle.textContent = formatDayTitle(date);
+  renderReviewSnapshot(snapshot, date);
+  elements.previousReviewDayButton.disabled = date <= yearStart;
+  elements.nextReviewDayButton.disabled = date >= today;
+  elements.goTodayReviewButton.disabled = editable;
+
+  const shouldLoadEditor = state.reviewLoadedDate !== date;
+  if (shouldLoadEditor) {
+    state.reviewLoadedDate = date;
+    state.reviewDirty = false;
+    elements.reviewSummary.value = entry?.summary ?? "";
+    elements.reviewReflection.value = entry?.reflection ?? "";
+    elements.reviewInspiration.value = entry?.inspiration ?? "";
+  }
+  for (const field of [
+    elements.reviewSummary,
+    elements.reviewReflection,
+    elements.reviewInspiration,
+    elements.saveReviewButton,
+  ]) {
+    field.disabled = !editable;
+  }
+  elements.reviewReadonlyNote.hidden = editable;
+  elements.saveReviewButton.hidden = !editable;
+  elements.reviewSaveState.textContent = state.reviewDirty
+    ? "有未保存的修改"
+    : entry
+      ? "已保存"
+      : editable
+        ? "尚未保存"
+        : "当天没有保存回顾";
+
+  elements.reviewReminderToggle.checked = state.reviewReminder.enabled;
+  elements.reviewReminderTime.value = state.reviewReminder.time;
+  elements.reviewReminderTime.disabled = !state.reviewReminder.enabled;
+  elements.reviewReminderStatus.textContent = state.reviewReminder.enabled
+    ? `已开启，每天 ${state.reviewReminder.time} 提醒。`
+    : "提醒默认关闭，开启后会请求通知权限。";
+
+  const archivedEntries = state.reviewEntries.filter(
+    (item) => Number(item.date.slice(0, 4)) < currentYear,
+  );
+  elements.reviewArchiveBanner.hidden = archivedEntries.length === 0;
+  if (archivedEntries.length > 0) {
+    const years = [
+      ...new Set(archivedEntries.map((item) => item.date.slice(0, 4))),
+    ];
+    elements.reviewArchiveMessage.textContent =
+      `${years.join("、")} 年有 ${archivedEntries.length} 天记录待导出或清除。`;
+  }
+}
+
+function readReviewForm() {
+  return {
+    date: state.reviewDate,
+    summary: elements.reviewSummary.value,
+    reflection: elements.reviewReflection.value,
+    inspiration: elements.reviewInspiration.value,
+  };
+}
+
+function handleReviewSubmit(event) {
+  event.preventDefault();
+  if (state.reviewDate !== todayISO()) {
+    showToast("只有今天可以编辑回顾");
+    return;
+  }
+  const input = readReviewForm();
+  const existing = reviewEntryForDate(state.reviewDate);
+  const snapshot =
+    existing?.activitySnapshot ??
+    buildReviewActivitySnapshot(state.events, state.reviewDate);
+  let entry;
+  try {
+    entry = createReviewEntry(input, {
+      existing,
+      activitySnapshot: snapshot,
+    });
+  } catch (error) {
+    showToast(error.message);
+    return;
+  }
+  if (existing) {
+    snapshotBefore("修改回顾前");
+  }
+  state.reviewEntries = state.reviewEntries
+    .filter((item) => item.date !== state.reviewDate);
+  if (entry) {
+    state.reviewEntries.push(entry);
+    state.reviewEntries.sort((left, right) =>
+      left.date.localeCompare(right.date),
+    );
+  }
+  state.reviewDirty = false;
+  state.reviewLoadedDate = null;
+  persistEvents();
+  render();
+  showToast(entry ? "回顾已保存" : "空白回顾已删除");
+}
+
+function markReviewDirty() {
+  if (state.reviewDate !== todayISO()) {
+    return;
+  }
+  state.reviewDirty = true;
+  elements.reviewSaveState.textContent = "有未保存的修改";
+}
+
+function requestReviewLeave(callback) {
+  if (state.view !== "review" || !state.reviewDirty) {
+    callback();
+    return;
+  }
+  state.pendingReviewNavigation = callback;
+  elements.unsavedReviewDialog.showModal();
 }
 
 function describeOccupiedSlots(slots) {
@@ -2181,7 +2546,7 @@ function renderActivities(window) {
     : "活动项目";
   elements.viewSummary.textContent = state.archiveMode
     ? `${archived.length} 个归档项目`
-    : `${scheduleGroups.length} 个定期 · ${todos.length} 个代办 · ${checkins.length + paused.length} 个打卡`;
+    : `${scheduleGroups.length} 个定期 · ${todos.length} 个待办 · ${checkins.length + paused.length} 个打卡`;
   elements.archiveToggleButton.textContent = state.archiveMode
     ? "返回活动"
     : "查看归档";
@@ -2220,7 +2585,7 @@ function renderActivities(window) {
     elements.activeActivityList.append(createListEmpty("暂无定期活动"));
   }
   if (todos.length === 0) {
-    elements.todoActivityList.append(createListEmpty("暂无代办"));
+    elements.todoActivityList.append(createListEmpty("暂无待办"));
   }
   if (checkins.length === 0) {
     elements.checkinActivityList.append(createListEmpty("暂无打卡项目"));
@@ -2517,6 +2882,167 @@ function renderCategoryOptions() {
   }
 }
 
+async function handleReviewReminderToggle() {
+  if (!nativeApp) {
+    return;
+  }
+  const enabled = elements.reviewReminderToggle.checked;
+  if (enabled) {
+    try {
+      const permission = await requestNotificationPermission();
+      if (!permission.granted) {
+        elements.reviewReminderToggle.checked = false;
+        showToast("通知权限未开启，无法启用每日回顾提醒");
+        return;
+      }
+    } catch (error) {
+      elements.reviewReminderToggle.checked = false;
+      showToast(error.message || "无法请求通知权限");
+      return;
+    }
+  }
+  state.reviewReminder = normalizeReviewReminder({
+    enabled,
+    time: elements.reviewReminderTime.value || state.reviewReminder.time,
+  });
+  persistEvents();
+  renderReview();
+  showToast(enabled ? "每日回顾提醒已开启" : "每日回顾提醒已关闭");
+}
+
+function handleReviewReminderTimeChange() {
+  if (timeToMinutes(elements.reviewReminderTime.value) === null) {
+    elements.reviewReminderTime.value = state.reviewReminder.time;
+    showToast("请选择有效的提醒时间");
+    return;
+  }
+  state.reviewReminder = normalizeReviewReminder({
+    enabled: state.reviewReminder.enabled,
+    time: elements.reviewReminderTime.value,
+  });
+  persistEvents();
+  renderReview();
+  showToast("每日回顾提醒时间已更新");
+}
+
+function oldReviewEntries() {
+  const currentYear = Number(todayISO().slice(0, 4));
+  return state.reviewEntries.filter(
+    (entry) => Number(entry.date.slice(0, 4)) < currentYear,
+  );
+}
+
+function openReviewArchiveDialog() {
+  const entries = oldReviewEntries();
+  if (entries.length === 0) {
+    return;
+  }
+  const years = [
+    ...new Set(entries.map((entry) => entry.date.slice(0, 4))),
+  ];
+  state.pendingReviewArchiveMode = null;
+  elements.reviewArchiveDialogMessage.textContent =
+    `${years.join("、")} 年共有 ${entries.length} 天回顾。` +
+    "请先导出回顾册，或明确放弃后再清除。";
+  elements.reviewArchiveConfirm.hidden = true;
+  elements.exportReviewArchiveButton.disabled = false;
+  elements.reviewArchiveDialog.showModal();
+}
+
+let reviewArchivePromptedThisSession = false;
+
+function maybePromptReviewArchive() {
+  if (
+    reviewArchivePromptedThisSession ||
+    oldReviewEntries().length === 0 ||
+    (nativeApp && !state.authenticated)
+  ) {
+    return;
+  }
+  reviewArchivePromptedThisSession = true;
+  openReviewArchiveDialog();
+}
+
+async function exportReviewArchive() {
+  const entries = oldReviewEntries();
+  if (entries.length === 0) {
+    elements.reviewArchiveDialog.close();
+    return;
+  }
+  const years = [
+    ...new Set(entries.map((entry) => entry.date.slice(0, 4))),
+  ];
+  const filename =
+    years.length === 1
+      ? `daily-route-review-${years[0]}.md`
+      : `daily-route-review-${years[0]}-${years.at(-1)}.md`;
+  const contents = buildReviewMarkdown(entries);
+  elements.exportReviewArchiveButton.disabled = true;
+  try {
+    if (nativeApp) {
+      const shared = await shareNativeTextFile(filename, contents, {
+        title: "Daily Route 回顾册",
+        text: "Daily Route 回顾册",
+        dialogTitle: "导出回顾册",
+      });
+      if (!shared) {
+        throw new Error("当前设备无法打开系统分享面板");
+      }
+    } else {
+      downloadTextFile(filename, contents, "text/markdown;charset=utf-8");
+    }
+    state.pendingReviewArchiveMode = "export";
+    elements.reviewArchiveConfirmMessage.textContent =
+      `回顾册 ${filename} 已生成。确认已经保存文件后，再清除应用中的旧回顾。`;
+    elements.confirmReviewArchiveButton.textContent = "已保存，清除旧回顾";
+    elements.reviewArchiveConfirm.hidden = false;
+  } catch (error) {
+    showToast(error.message || "导出回顾册失败");
+  } finally {
+    elements.exportReviewArchiveButton.disabled = false;
+  }
+}
+
+function requestDiscardReviewArchive() {
+  if (oldReviewEntries().length === 0) {
+    elements.reviewArchiveDialog.close();
+    return;
+  }
+  state.pendingReviewArchiveMode = "discard";
+  elements.reviewArchiveConfirmMessage.textContent =
+    "此操作会永久清除去年的回顾和仍包含这些记录的本地恢复点，且无法撤销。";
+  elements.confirmReviewArchiveButton.textContent = "确认永久放弃";
+  elements.reviewArchiveConfirm.hidden = false;
+}
+
+function confirmReviewArchiveClear() {
+  if (!state.pendingReviewArchiveMode) {
+    return;
+  }
+  const mode = state.pendingReviewArchiveMode;
+  const currentYear = Number(todayISO().slice(0, 4));
+  state.reviewEntries = removeReviewsBeforeYear(
+    state.reviewEntries,
+    currentYear,
+  );
+  if (nativeApp) {
+    removeReviewsBeforeYearFromRecovery(currentYear);
+  }
+  state.pendingReviewArchiveMode = null;
+  state.reviewLoadedDate = null;
+  persistEvents();
+  elements.reviewArchiveDialog.close();
+  render();
+  showToast(
+    mode === "discard" ? "旧回顾已放弃" : "旧回顾已清除",
+  );
+}
+
+function deferReviewArchive() {
+  state.pendingReviewArchiveMode = null;
+  elements.reviewArchiveDialog.close();
+}
+
 function migrationTargetYear(now = new Date()) {
   const month = now.getMonth() + 1;
   return month === 12 ? now.getFullYear() + 1 : now.getFullYear();
@@ -2788,8 +3314,8 @@ function openTodoEditDialog(activity) {
   };
   state.confirmedOverrideDiscard = false;
   elements.eventForm.reset();
-  elements.eventDialogKicker.textContent = "编辑代办";
-  elements.eventDialogTitle.textContent = "编辑代办";
+  elements.eventDialogKicker.textContent = "编辑待办";
+  elements.eventDialogTitle.textContent = "编辑待办";
   state.editing = {
     kind: "todo",
     activityId: activity.id,
@@ -3134,11 +3660,11 @@ function handleTodoSubmit() {
     categoryId: input.categoryId,
   });
   if (!candidate) {
-    elements.formError.textContent = "代办内容不完整";
+    elements.formError.textContent = "待办内容不完整";
     elements.formError.hidden = false;
     return;
   }
-  snapshotBefore(existing ? "修改代办前" : "添加代办前");
+  snapshotBefore(existing ? "修改待办前" : "添加待办前");
   state.events = existing
     ? state.events.map((activity) =>
         activity.id === existing.id
@@ -3149,7 +3675,7 @@ function handleTodoSubmit() {
   finishActivitySave(
     candidate.deadlineDate,
     timeToMinutes(candidate.deadlineTime) - 60,
-    existing ? "代办已更新" : "代办已添加",
+    existing ? "待办已更新" : "待办已添加",
   );
 }
 
@@ -3497,8 +4023,13 @@ function renderCategoryManager() {
   elements.categoryList.replaceChildren(fragment);
 }
 
-function openCheckinCalendar(activity, date = todayISO()) {
+function openCheckinCalendar(
+  activity,
+  date = todayISO(),
+  { editableDate = null } = {},
+) {
   state.checkinCalendarId = activity.id;
+  state.checkinEditableDate = editableDate;
   const currentMonth = startOfMonth(date);
   state.checkinMonthCursor =
     currentMonth >= `${activity.year}-01-01` &&
@@ -3506,6 +4037,9 @@ function openCheckinCalendar(activity, date = todayISO()) {
       ? currentMonth
       : `${activity.year}-01-01`;
   elements.checkinCalendarTitle.textContent = activity.title;
+  elements.checkinCalendarNote.textContent = editableDate
+    ? "只能修改今天的打卡状态；历史日期仅供查看。"
+    : "打卡月历仅供查看；如需打卡，请回到今天页。";
   elements.checkinCalendarDialog.showModal();
   renderCheckinCalendar();
 }
@@ -3548,27 +4082,33 @@ function renderCheckinCalendar() {
     button.classList.toggle("is-checked", checked);
     button.classList.toggle("is-today", date === today);
     button.disabled =
-      !inMonth || !inYear || date > today || paused;
+      !inMonth ||
+      !inYear ||
+      date > today ||
+      paused ||
+      date !== state.checkinEditableDate;
     button.setAttribute(
       "aria-label",
       `${formatDayTitle(date)}${checked ? "，已打卡" : "，未打卡"}`,
     );
-    button.addEventListener("click", () => {
-      try {
-        state.events = state.events.map((item) =>
-          item.id === activity.id
-            ? toggleCheckin(item, date)
-            : item,
-        );
-        persistEvents();
-        renderCheckinCalendar();
-        if (state.view === "day" || state.view === "week") {
-          render();
+    if (!button.disabled) {
+      button.addEventListener("click", () => {
+        try {
+          state.events = state.events.map((item) =>
+            item.id === activity.id
+              ? toggleCheckin(item, date)
+              : item,
+          );
+          persistEvents();
+          renderCheckinCalendar();
+          if (state.view === "day" || state.view === "week") {
+            render();
+          }
+        } catch (error) {
+          showToast(error.message);
         }
-      } catch (error) {
-        showToast(error.message);
-      }
-    });
+      });
+    }
     fragment.append(button);
   }
   elements.checkinCalendarGrid.replaceChildren(fragment);
@@ -3674,6 +4214,7 @@ function finishMigration(targetYear) {
   persistEvents();
   elements.migrationDialog.close();
   render();
+  requestAnimationFrame(maybePromptReviewArchive);
 }
 
 function skipMigration() {
@@ -3833,12 +4374,101 @@ function bindEvents() {
     exportActivities,
   );
 
-  elements.dayNavButton.addEventListener("click", () => setView("day"));
-  elements.weekNavButton.addEventListener("click", () => setView("week"));
-  elements.monthNavButton.addEventListener("click", () => setView("month"));
-  elements.activityNavButton.addEventListener("click", () =>
-    setView("activity"),
+  elements.dayNavButton.addEventListener("click", () =>
+    requestReviewLeave(() => setView("day")),
   );
+  elements.weekNavButton.addEventListener("click", () =>
+    requestReviewLeave(() => setView("week")),
+  );
+  elements.monthNavButton.addEventListener("click", () =>
+    requestReviewLeave(() => setView("month")),
+  );
+  elements.reviewNavButton.addEventListener("click", () =>
+    requestReviewLeave(() => setView("review")),
+  );
+  elements.activityNavButton.addEventListener("click", () =>
+    requestReviewLeave(() => setView("activity")),
+  );
+
+  elements.previousReviewDayButton.addEventListener("click", () => {
+    const date = addDays(state.reviewDate, -1);
+    requestReviewLeave(() => {
+      state.reviewDate = date;
+      state.reviewLoadedDate = null;
+      render();
+    });
+  });
+  elements.nextReviewDayButton.addEventListener("click", () => {
+    const date = addDays(state.reviewDate, 1);
+    if (date > todayISO()) {
+      return;
+    }
+    requestReviewLeave(() => {
+      state.reviewDate = date;
+      state.reviewLoadedDate = null;
+      render();
+    });
+  });
+  elements.goTodayReviewButton.addEventListener("click", () =>
+    requestReviewLeave(() => {
+      state.reviewDate = todayISO();
+      state.reviewLoadedDate = null;
+      render();
+    }),
+  );
+  elements.reviewForm.addEventListener("submit", handleReviewSubmit);
+  for (const field of [
+    elements.reviewSummary,
+    elements.reviewReflection,
+    elements.reviewInspiration,
+  ]) {
+    field.maxLength = REVIEW_TEXT_MAX;
+    field.addEventListener("input", markReviewDirty);
+  }
+  elements.reviewReminderToggle.addEventListener(
+    "change",
+    handleReviewReminderToggle,
+  );
+  elements.reviewReminderTime.addEventListener(
+    "change",
+    handleReviewReminderTimeChange,
+  );
+  elements.openReviewArchiveButton.addEventListener(
+    "click",
+    openReviewArchiveDialog,
+  );
+  elements.exportReviewArchiveButton.addEventListener(
+    "click",
+    exportReviewArchive,
+  );
+  elements.discardReviewArchiveButton.addEventListener(
+    "click",
+    requestDiscardReviewArchive,
+  );
+  elements.deferReviewArchiveButton.addEventListener(
+    "click",
+    deferReviewArchive,
+  );
+  elements.cancelReviewArchiveConfirmButton.addEventListener("click", () => {
+    state.pendingReviewArchiveMode = null;
+    elements.reviewArchiveConfirm.hidden = true;
+  });
+  elements.confirmReviewArchiveButton.addEventListener(
+    "click",
+    confirmReviewArchiveClear,
+  );
+  elements.cancelLeaveReviewButton.addEventListener("click", () => {
+    state.pendingReviewNavigation = null;
+    elements.unsavedReviewDialog.close();
+  });
+  elements.discardReviewChangesButton.addEventListener("click", () => {
+    const callback = state.pendingReviewNavigation;
+    state.pendingReviewNavigation = null;
+    state.reviewDirty = false;
+    state.reviewLoadedDate = null;
+    elements.unsavedReviewDialog.close();
+    callback?.();
+  });
 
   elements.previousDayButton.addEventListener("click", () => {
     const window = getScheduleWindow();
@@ -3958,7 +4588,7 @@ function bindEvents() {
       void (async () => {
         const permission = await requestNotificationPermission();
         if (!permission.granted) {
-          showToast("通知权限未开启，代办提醒可能无法送达");
+          showToast("通知权限未开启，待办提醒可能无法送达");
         }
         if (currentTodoReminderMode() === "alarm") {
           const currentExact = await getExactAlarmPermissionState();
@@ -4082,6 +4712,7 @@ function bindEvents() {
   elements.closeCheckinCalendar.addEventListener("click", () => {
     elements.checkinCalendarDialog.close();
     state.checkinCalendarId = null;
+    state.checkinEditableDate = null;
   });
   elements.previousCheckinMonth.addEventListener("click", () => {
     state.checkinMonthCursor = addMonthsToMonth(
@@ -4127,6 +4758,13 @@ function bindEvents() {
     { passive: true },
   );
 
+  window.addEventListener("beforeunload", (event) => {
+    if (state.view === "review" && state.reviewDirty) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
+
   window.addEventListener("storage", (event) => {
     if (!nativeApp && event.key === WEB_STORAGE_KEY) {
       const loaded = readWebState();
@@ -4134,6 +4772,8 @@ function bindEvents() {
       state.categories = loaded.categories;
       state.yearMigrationCompletedFor =
         loaded.yearMigrationCompletedFor;
+      state.reviewEntries = loaded.reviewEntries;
+      state.reviewReminder = loaded.reviewReminder;
       render();
     } else if (nativeApp && event.key === NATIVE_STORAGE_KEY) {
       const loaded = readNativeState();
@@ -4144,6 +4784,8 @@ function bindEvents() {
         state.categories = loaded.state.categories;
         state.yearMigrationCompletedFor =
           loaded.state.yearMigrationCompletedFor;
+        state.reviewEntries = loaded.state.reviewEntries;
+        state.reviewReminder = loaded.state.reviewReminder;
         state.storageCorrupt = false;
       } else if (loaded.status === "corrupt") {
         state.storageCorrupt = true;
@@ -4239,11 +4881,10 @@ if (nativeApp) {
 }
 
 requestAnimationFrame(() => {
-  if (
-    (!nativeApp || state.authenticated) &&
-    migrationIsMandatory()
-  ) {
+  if ((!nativeApp || state.authenticated) && migrationIsMandatory()) {
     openMigrationDialog();
+  } else {
+    maybePromptReviewArchive();
   }
 });
 

@@ -2,6 +2,11 @@ import {
   normalizeActivities,
   normalizeCategories,
 } from "./activities.js";
+import {
+  normalizeReviewEntries,
+  normalizeReviewReminder,
+  removeReviewsBeforeYear,
+} from "./review.js";
 
 export const RECOVERY_STORAGE_KEY = "daily-route.recovery.v1";
 export const LAST_EXPORT_STORAGE_KEY = "daily-route.last-export.v1";
@@ -38,6 +43,8 @@ export function readRecoveryPoints(storage = localStorage) {
           point.yearMigrationCompletedFor ??
             new Date(point.createdAt).getFullYear(),
         ),
+        reviewEntries: normalizeReviewEntries(point.reviewEntries),
+        reviewReminder: normalizeReviewReminder(point.reviewReminder),
       };
     })
     .filter((point) => point?.id && point.createdAt);
@@ -53,16 +60,27 @@ export function addRecoveryPoint(
         events: stateOrEvents,
         categories: {},
         yearMigrationCompletedFor: now.getFullYear(),
+        reviewEntries: [],
+        reviewReminder: normalizeReviewReminder(),
       }
     : stateOrEvents;
   const normalizedEvents = normalizeActivities(state.events);
   const normalizedCategories = normalizeCategories(state.categories);
+  const normalizedReviews = normalizeReviewEntries(state.reviewEntries);
   const signature = JSON.stringify({
     events: normalizedEvents,
     categories: normalizedCategories,
+    reviewEntries: normalizedReviews,
   });
   const current = readRecoveryPoints(storage);
-  if (current[0] && JSON.stringify(current[0].events) === signature) {
+  const currentSignature = current[0]
+    ? JSON.stringify({
+        events: current[0].events,
+        categories: current[0].categories,
+        reviewEntries: current[0].reviewEntries,
+      })
+    : null;
+  if (currentSignature === signature) {
     return current;
   }
 
@@ -75,6 +93,8 @@ export function addRecoveryPoint(
     yearMigrationCompletedFor: Number(
       state.yearMigrationCompletedFor ?? now.getFullYear(),
     ),
+    reviewEntries: normalizedReviews,
+    reviewReminder: normalizeReviewReminder(state.reviewReminder),
   };
   const updated = [point, ...current].slice(0, MAX_RECOVERY_POINTS);
   storage.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(updated));
@@ -84,6 +104,18 @@ export function addRecoveryPoint(
 export function clearRecoveryPoints(storage = localStorage) {
   storage.removeItem(RECOVERY_STORAGE_KEY);
   storage.removeItem(LAST_EXPORT_STORAGE_KEY);
+}
+
+export function removeReviewsBeforeYearFromRecovery(
+  year,
+  { storage = localStorage } = {},
+) {
+  const points = readRecoveryPoints(storage).map((point) => ({
+    ...point,
+    reviewEntries: removeReviewsBeforeYear(point.reviewEntries, year),
+  }));
+  storage.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(points));
+  return points;
 }
 
 export function markManualExport(

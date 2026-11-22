@@ -7,7 +7,15 @@ function getPlugin(name) {
   return globalThis.DailyRouteNative?.[name] ?? null;
 }
 
-export async function shareNativeBackup(filename, contents) {
+export async function shareNativeTextFile(
+  filename,
+  contents,
+  {
+    title = "每日安排活动备份",
+    text = "Daily Route 活动备份",
+    dialogTitle = "导出活动备份",
+  } = {},
+) {
   const filesystem = getPlugin("Filesystem");
   const share = getPlugin("Share");
   if (!filesystem || !share) {
@@ -26,10 +34,14 @@ export async function shareNativeBackup(filename, contents) {
   });
 
   await share.share({
-    title: "每日安排活动备份",
-    text: "Daily Route 活动备份",
+    title,
+    text,
     files: [result.uri],
-    dialogTitle: "导出活动备份",
+    dialogTitle,
   });
   return true;
+}
+
+export function shareNativeBackup(filename, contents) {
+  return shareNativeTextFile(filename, contents);
 }

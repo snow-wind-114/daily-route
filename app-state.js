@@ -4,13 +4,21 @@ import {
   normalizeCategories,
 } from "./activities.js";
 import { normalizeAccountRecord } from "./account.js";
+import {
+  normalizeReviewEntries,
+  normalizeReviewReminder,
+} from "./review.js";
 
 export const WEB_STORAGE_KEY = "daily-route.storage.v1";
-export const LEGACY_NATIVE_STORAGE_KEY = "daily-route.storage.v2";
-export const PREVIOUS_NATIVE_STORAGE_KEY = "daily-route.storage.v3";
-export const NATIVE_STORAGE_KEY = "daily-route.storage.v4";
-export const NATIVE_STORAGE_VERSION = 4;
-export const PREVIOUS_NATIVE_STORAGE_VERSION = 3;
+export const OLDER_NATIVE_STORAGE_KEY = "daily-route.storage.v2";
+export const PREVIOUS_OLDER_NATIVE_STORAGE_KEY =
+  "daily-route.storage.v3";
+export const PREVIOUS_NATIVE_STORAGE_KEY = "daily-route.storage.v4";
+export const LEGACY_NATIVE_STORAGE_KEY = OLDER_NATIVE_STORAGE_KEY;
+export const NATIVE_STORAGE_KEY = "daily-route.storage.v5";
+export const NATIVE_STORAGE_VERSION = 5;
+export const PREVIOUS_NATIVE_STORAGE_VERSION = 4;
+export const PREVIOUS_OLDER_NATIVE_STORAGE_VERSION = 3;
 export const LEGACY_NATIVE_STORAGE_VERSION = 2;
 
 function normalizeYear(value) {
@@ -26,6 +34,8 @@ function parseWebPayload(payload) {
       events: normalizeActivities(payload),
       categories: emptyCategories(),
       yearMigrationCompletedFor: new Date().getFullYear(),
+      reviewEntries: [],
+      reviewReminder: normalizeReviewReminder(),
     };
   }
   if (!payload || typeof payload !== "object") {
@@ -33,6 +43,8 @@ function parseWebPayload(payload) {
       events: [],
       categories: emptyCategories(),
       yearMigrationCompletedFor: new Date().getFullYear(),
+      reviewEntries: [],
+      reviewReminder: normalizeReviewReminder(),
     };
   }
   const rawEvents = Array.isArray(payload.events) ? payload.events : [];
@@ -42,6 +54,8 @@ function parseWebPayload(payload) {
     yearMigrationCompletedFor: normalizeYear(
       payload.yearMigrationCompletedFor,
     ),
+    reviewEntries: normalizeReviewEntries(payload.reviewEntries),
+    reviewReminder: normalizeReviewReminder(payload.reviewReminder),
   };
 }
 
@@ -52,6 +66,8 @@ export function readWebState(storage = localStorage) {
       events: [],
       categories: emptyCategories(),
       yearMigrationCompletedFor: new Date().getFullYear(),
+      reviewEntries: [],
+      reviewReminder: normalizeReviewReminder(),
     };
   }
   return parseWebPayload(JSON.parse(stored));
@@ -71,6 +87,8 @@ export function writeWebState(state, storage = localStorage) {
       yearMigrationCompletedFor: normalizeYear(
         state.yearMigrationCompletedFor,
       ),
+      reviewEntries: normalizeReviewEntries(state.reviewEntries),
+      reviewReminder: normalizeReviewReminder(state.reviewReminder),
     }),
   );
 }
@@ -81,6 +99,8 @@ export function writeWebEvents(events, storage = localStorage) {
       events,
       categories: emptyCategories(),
       yearMigrationCompletedFor: new Date().getFullYear(),
+      reviewEntries: [],
+      reviewReminder: normalizeReviewReminder(),
     },
     storage,
   );
@@ -92,6 +112,7 @@ export function normalizeNativeState(payload) {
     ![
       NATIVE_STORAGE_VERSION,
       PREVIOUS_NATIVE_STORAGE_VERSION,
+      PREVIOUS_OLDER_NATIVE_STORAGE_VERSION,
       LEGACY_NATIVE_STORAGE_VERSION,
     ].includes(payload.version) ||
     !Array.isArray(payload.events)
@@ -113,6 +134,8 @@ export function normalizeNativeState(payload) {
     yearMigrationCompletedFor: normalizeYear(
       payload.yearMigrationCompletedFor,
     ),
+    reviewEntries: normalizeReviewEntries(payload.reviewEntries),
+    reviewReminder: normalizeReviewReminder(payload.reviewReminder),
   };
 }
 
@@ -122,6 +145,8 @@ export function makeNativeStatePayload({
   events,
   categories,
   yearMigrationCompletedFor,
+  reviewEntries,
+  reviewReminder,
 }) {
   return {
     version: NATIVE_STORAGE_VERSION,
@@ -130,6 +155,8 @@ export function makeNativeStatePayload({
     events: normalizeActivities(events),
     categories: normalizeCategories(categories),
     yearMigrationCompletedFor: normalizeYear(yearMigrationCompletedFor),
+    reviewEntries: normalizeReviewEntries(reviewEntries),
+    reviewReminder: normalizeReviewReminder(reviewReminder),
   };
 }
 
@@ -152,7 +179,8 @@ export function readNativeState(storage = localStorage) {
 
   for (const key of [
     PREVIOUS_NATIVE_STORAGE_KEY,
-    LEGACY_NATIVE_STORAGE_KEY,
+    PREVIOUS_OLDER_NATIVE_STORAGE_KEY,
+    OLDER_NATIVE_STORAGE_KEY,
   ]) {
     const legacy = storage.getItem(key);
     if (!legacy) {
@@ -186,5 +214,6 @@ export function writeNativeState(state, storage = localStorage) {
 export function removeNativeState(storage = localStorage) {
   storage.removeItem(NATIVE_STORAGE_KEY);
   storage.removeItem(PREVIOUS_NATIVE_STORAGE_KEY);
-  storage.removeItem(LEGACY_NATIVE_STORAGE_KEY);
+  storage.removeItem(PREVIOUS_OLDER_NATIVE_STORAGE_KEY);
+  storage.removeItem(OLDER_NATIVE_STORAGE_KEY);
 }

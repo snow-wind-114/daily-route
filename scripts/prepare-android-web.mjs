@@ -37,6 +37,7 @@ const files = [
   "native-widget.js",
   "notifications.js",
   "recovery.js",
+  "review.js",
   "schedule.js",
   "sw.js",
   "update-check.js",

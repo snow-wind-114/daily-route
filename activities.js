@@ -18,7 +18,7 @@ export const ACTIVITY_KINDS = Object.freeze([
 ]);
 export const ACTIVITY_KIND_LABELS = Object.freeze({
   schedule: "定期",
-  todo: "代办",
+  todo: "待办",
   checkin: "打卡",
 });
 export const TODO_MAX_REMINDER_DAYS = 30;
@@ -486,7 +486,7 @@ export function validateTodoInput(
 ) {
   const title = cleanText(input.title, 80);
   if (!title) {
-    return "请填写代办名称";
+    return "请填写待办名称";
   }
   if (
     !isISODate(input.deadlineDate) ||

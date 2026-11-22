@@ -291,7 +291,157 @@
 
           <div class="month-legend">
             <span><i aria-hidden="true"></i>有活动</span>
-            <span>刻度每格 2 小时 · 右上角红字为代办截止数</span>
+            <span>刻度每格 2 小时 · 右上角红字为待办截止数</span>
+          </div>
+        </section>
+
+        <section
+          class="review-view"
+          id="reviewView"
+          aria-labelledby="viewTitle"
+          hidden
+        >
+          <div class="date-navigation">
+            <button
+              class="date-arrow"
+              id="previousReviewDayButton"
+              type="button"
+              aria-label="前一天"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </button>
+            <button class="today-button" id="goTodayReviewButton" type="button">
+              回到今天
+            </button>
+            <button
+              class="date-arrow"
+              id="nextReviewDayButton"
+              type="button"
+              aria-label="后一天"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="review-scroll">
+            <div class="review-archive-banner" id="reviewArchiveBanner" hidden>
+              <div>
+                <strong>去年的回顾还没有归档</strong>
+                <span id="reviewArchiveMessage"></span>
+              </div>
+              <button
+                class="text-button"
+                id="openReviewArchiveButton"
+                type="button"
+              >
+                处理
+              </button>
+            </div>
+
+            <section
+              class="review-reminder-card native-only"
+              id="reviewReminderField"
+              hidden
+            >
+              <div class="review-card-heading">
+                <div>
+                  <h2>每日回顾提醒</h2>
+                  <p>使用普通通知，不申请精确闹钟权限。</p>
+                </div>
+                <label class="toggle-switch">
+                  <input id="reviewReminderToggle" type="checkbox" />
+                  <span aria-hidden="true"></span>
+                  <span class="sr-only">开启每日回顾提醒</span>
+                </label>
+              </div>
+              <label class="review-reminder-time">
+                <span>每天</span>
+                <input
+                  id="reviewReminderTime"
+                  type="time"
+                  value="21:30"
+                  step="60"
+                />
+                <span>提醒</span>
+              </label>
+              <p class="review-reminder-status" id="reviewReminderStatus">
+                提醒默认关闭。
+              </p>
+            </section>
+
+            <section class="review-activity-card">
+              <div class="review-card-heading">
+                <div>
+                  <h2>今日活动</h2>
+                  <p id="reviewActivitySummary">暂无活动</p>
+                </div>
+              </div>
+              <div class="review-snapshot-groups">
+                <section>
+                  <h3>定期活动</h3>
+                  <div class="review-snapshot-list" id="reviewScheduleList"></div>
+                </section>
+                <section>
+                  <h3>待办</h3>
+                  <div class="review-snapshot-list" id="reviewTodoList"></div>
+                </section>
+                <section>
+                  <h3>打卡</h3>
+                  <div class="review-snapshot-list" id="reviewCheckinList"></div>
+                </section>
+              </div>
+            </section>
+
+            <form class="review-editor" id="reviewForm" novalidate>
+              <p class="review-readonly-note" id="reviewReadonlyNote" hidden>
+                历史回顾仅供查看。只有今天可以编写或修改。
+              </p>
+              <label>
+                <span>今日总结</span>
+                <textarea
+                  id="reviewSummary"
+                  maxlength="1000"
+                  rows="5"
+                  placeholder="今天完成了什么，有什么值得记住的结果？"
+                ></textarea>
+              </label>
+              <label>
+                <span>感想</span>
+                <textarea
+                  id="reviewReflection"
+                  maxlength="1000"
+                  rows="5"
+                  placeholder="写下今天的心情、体会或需要调整的地方。"
+                ></textarea>
+              </label>
+              <label>
+                <span>灵感</span>
+                <textarea
+                  id="reviewInspiration"
+                  maxlength="1000"
+                  rows="4"
+                  placeholder="随手记下今天想到的点子。"
+                ></textarea>
+              </label>
+              <div class="review-editor-footer">
+                <span id="reviewSaveState">尚未保存</span>
+                <button
+                  class="primary-button"
+                  id="saveReviewButton"
+                  type="submit"
+                >
+                  保存回顾
+                </button>
+              </div>
+            </form>
+
+            <p class="review-privacy-note">
+              回顾保存在本机，并会进入 JSON 备份和恢复点；本地账户密码不会加密回顾正文。
+            </p>
           </div>
         </section>
 
@@ -348,7 +498,7 @@
 
             <section class="activity-section" id="todoActivitySection">
               <div class="section-heading">
-                <h2>代办</h2>
+                <h2>待办</h2>
                 <span id="todoActivityCount">0</span>
               </div>
               <div class="activity-list" id="todoActivityList"></div>
@@ -427,6 +577,17 @@
         </button>
         <button
           class="nav-button"
+          id="reviewNavButton"
+          type="button"
+          data-view="review"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4" />
+          </svg>
+          <span>回顾</span>
+        </button>
+        <button
+          class="nav-button"
           id="activityNavButton"
           type="button"
           data-view="activity"
@@ -482,7 +643,7 @@
               </label>
               <label>
                 <input type="radio" name="activityKind" value="todo" />
-                <span>代办</span>
+                <span>待办</span>
               </label>
               <label>
                 <input type="radio" name="activityKind" value="checkin" />
@@ -541,8 +702,8 @@
             id="todoReminderField"
             hidden
           >
-            <span class="field-label">代办提醒</span>
-            <div class="reminder-options" role="radiogroup" aria-label="代办提醒方式">
+            <span class="field-label">待办提醒</span>
+            <div class="reminder-options" role="radiogroup" aria-label="待办提醒方式">
               <label>
                 <input type="radio" name="todoReminderMode" value="none" checked />
                 <span><strong>不提醒</strong><small>静默</small></span>
@@ -1104,7 +1265,9 @@
           <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
         </div>
         <div class="checkin-calendar-grid" id="checkinCalendarGrid"></div>
-        <p class="recovery-note">点击今天或今年过去的日期切换打卡；未来日期和暂停区间不可操作。</p>
+        <p class="recovery-note" id="checkinCalendarNote">
+          打卡月历仅供查看；如需打卡，请回到今天页。
+        </p>
       </div>
     </dialog>
 
@@ -1123,7 +1286,7 @@
           <span>活动类型</span>
           <select id="categoryKindSelect">
             <option value="schedule">定期</option>
-            <option value="todo">代办</option>
+            <option value="todo">待办</option>
             <option value="checkin">打卡</option>
           </select>
         </div>
@@ -1147,13 +1310,92 @@
           </button>
         </div>
         <p class="recovery-note">
-          选择需要续到下一年度的定期和打卡项目。代办不会自动迁移，旧年未完成项目会保留在归档中。
+          选择需要续到下一年度的定期和打卡项目。待办不会自动迁移，旧年未完成项目会保留在归档中。
         </p>
         <div class="migration-list" id="migrationList"></div>
         <p class="form-error" id="migrationError" hidden></p>
         <div class="confirm-actions">
           <button class="secondary-button" id="skipMigrationButton" type="button">今年暂不迁移</button>
           <button class="primary-button" id="confirmMigrationButton" type="button">确认迁移</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="unsavedReviewDialog">
+      <div class="confirm-sheet">
+        <h2>放弃未保存的回顾？</h2>
+        <p>今天的总结、感想或灵感还没有保存，离开后会丢失。</p>
+        <div class="confirm-actions">
+          <button
+            class="secondary-button"
+            id="cancelLeaveReviewButton"
+            type="button"
+          >
+            继续编辑
+          </button>
+          <button
+            class="danger-solid-button"
+            id="discardReviewChangesButton"
+            type="button"
+          >
+            放弃修改
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="reviewArchiveDialog">
+      <div class="confirm-sheet review-archive-sheet">
+        <h2>归档去年的回顾</h2>
+        <p id="reviewArchiveDialogMessage"></p>
+        <p class="recovery-note">
+          回顾册只包含写过总结、感想或灵感的日期。清除后无法从应用内恢复，请保留下载或分享的文件。
+        </p>
+        <div class="confirm-actions review-archive-actions">
+          <button
+            class="secondary-button"
+            id="deferReviewArchiveButton"
+            type="button"
+          >
+            稍后处理
+          </button>
+          <button
+            class="danger-button"
+            id="discardReviewArchiveButton"
+            type="button"
+          >
+            明确放弃
+          </button>
+          <button
+            class="primary-button"
+            id="exportReviewArchiveButton"
+            type="button"
+          >
+            导出并清除
+          </button>
+        </div>
+        <div
+          class="review-archive-confirm"
+          id="reviewArchiveConfirm"
+          hidden
+        >
+          <p id="reviewArchiveConfirmMessage"></p>
+          <div class="confirm-actions">
+            <button
+              class="secondary-button"
+              id="cancelReviewArchiveConfirmButton"
+              type="button"
+            >
+              返回
+            </button>
+            <button
+              class="danger-solid-button"
+              id="confirmReviewArchiveButton"
+              type="button"
+            >
+              确认清除
+            </button>
+          </div>
         </div>
       </div>
     </dialog>

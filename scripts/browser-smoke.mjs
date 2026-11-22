@@ -130,12 +130,51 @@ const result = await evaluate(`(async () => {
   checkinButton.click();
   await wait();
 
+  document.querySelector("#reviewNavButton").click();
+  await wait();
+  const todayReviewEditable =
+    !document.querySelector("#reviewSummary").disabled;
+  const reviewAddActionsHidden =
+    document.querySelector("#addTopButton").hidden &&
+    document.querySelector("#addFab").hidden;
+  input("#reviewSummary", "今天完成了自动化回顾");
+  document.querySelector("#dayNavButton").click();
+  await wait();
+  const unsavedReviewDialogOpen =
+    document.querySelector("#unsavedReviewDialog").open;
+  document.querySelector("#cancelLeaveReviewButton").click();
+  await wait();
+  document.querySelector("#reviewForm").requestSubmit();
+  await wait();
+  const storedReview = JSON.parse(
+    localStorage.getItem("daily-route.storage.v1"),
+  ).reviewEntries.find((entry) => entry.date === today);
+  const reviewIncludesCheckin =
+    document.querySelector("#reviewCheckinList").textContent.includes("自动化阅读");
+  const reviewIncludesTodo =
+    document.querySelector("#reviewTodoList").textContent.includes("自动化报告");
+  document.querySelector("#previousReviewDayButton").click();
+  await wait();
+  const pastReviewReadonly =
+    document.querySelector("#reviewSummary").disabled &&
+    document.querySelector("#saveReviewButton").hidden;
+  document.querySelector("#goTodayReviewButton").click();
+  await wait();
+  const todoCopyUsesCorrectCharacters =
+    document.body.textContent.includes("待办") &&
+    !document.body.textContent.includes("代办");
+
   document.querySelector("#weekNavButton").click();
   await wait();
   const weekTodoRows = document.querySelectorAll(".week-overview-row").length;
   const weekCheckinRows = document.querySelectorAll(".week-checkin-row").length;
   const weekDayTodoRows = document.querySelectorAll(".week-event.is-todo").length;
   const weekDayCheckinRows = document.querySelectorAll(".week-event.is-checkin").length;
+  document.querySelector(".week-checkin-row").click();
+  const weekCalendarEditableDays = document.querySelectorAll(
+    ".checkin-day:not(:disabled)",
+  ).length;
+  document.querySelector("#closeCheckinCalendar").click();
 
   document.querySelector("#activityNavButton").click();
   await wait();
@@ -180,6 +219,9 @@ const result = await evaluate(`(async () => {
     throw new Error("打卡月历未打开");
   }
   const checkinDayCount = document.querySelectorAll(".checkin-day").length;
+  const activityCalendarEditableDays = document.querySelectorAll(
+    ".checkin-day:not(:disabled)",
+  ).length;
   document.querySelector("#closeCheckinCalendar").click();
 
   document.querySelector("#todoActivityList .activity-resume").click();
@@ -237,6 +279,17 @@ const result = await evaluate(`(async () => {
     weekCheckinRows,
     weekDayTodoRows,
     weekDayCheckinRows,
+    todayReviewEditable,
+    reviewAddActionsHidden,
+    unsavedReviewDialogOpen,
+    storedReviewSummary: storedReview?.summary,
+    storedReviewSnapshot: storedReview?.activitySnapshot,
+    reviewIncludesCheckin,
+    reviewIncludesTodo,
+    pastReviewReadonly,
+    todoCopyUsesCorrectCharacters,
+    weekCalendarEditableDays,
+    activityCalendarEditableDays,
     lifecycleLabels,
     scheduleDeleteDialogOpen,
     eventDialogOpenAfterDelete: document.querySelector("#eventDialog").open,
@@ -279,6 +332,17 @@ if (
   result.weekCheckinRows !== 1 ||
   result.weekDayTodoRows !== 0 ||
   result.weekDayCheckinRows !== 0 ||
+  !result.todayReviewEditable ||
+  !result.reviewAddActionsHidden ||
+  !result.unsavedReviewDialogOpen ||
+  result.storedReviewSummary !== "今天完成了自动化回顾" ||
+  result.storedReviewSnapshot?.checkins?.[0]?.checked !== true ||
+  !result.reviewIncludesCheckin ||
+  !result.reviewIncludesTodo ||
+  !result.pastReviewReadonly ||
+  !result.todoCopyUsesCorrectCharacters ||
+  result.weekCalendarEditableDays !== 0 ||
+  result.activityCalendarEditableDays !== 0 ||
   result.lifecycleLabels.archive !== "归档活动" ||
   result.lifecycleLabels.delete !== "删除整个活动" ||
   !result.scheduleDeleteDialogOpen ||

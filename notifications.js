@@ -16,6 +16,10 @@ import {
   timeToMinutes,
   todayISO,
 } from "./date-utils.js";
+import {
+  DEFAULT_REVIEW_REMINDER,
+  normalizeReviewReminder,
+} from "./review.js";
 import { occurrencesBetween } from "./schedule.js";
 
 const REMINDER_KIND = "daily-route-reminder";
@@ -95,6 +99,7 @@ export function buildReminderPlan(
     startDate = todayISO(),
     endDate = getScheduleWindow(startDate).endDate,
     now = new Date(),
+    reviewReminder = DEFAULT_REVIEW_REMINDER,
   } = {},
 ) {
   const plan = [];
@@ -203,6 +208,32 @@ export function buildReminderPlan(
           ? `打卡提醒：${group.titles[0]}`
           : `${group.titles.length}项待打卡`,
       body: `今天还未打卡：${group.titles.join("、")}`,
+    });
+  }
+
+  const normalizedReviewReminder =
+    normalizeReviewReminder(reviewReminder);
+  if (normalizedReviewReminder.enabled) {
+    const [hour, minute] = normalizedReviewReminder.time
+      .split(":")
+      .map(Number);
+    let at = dateAtTime(todayISO(now), normalizedReviewReminder.time);
+    if (!at || at.getTime() <= now.getTime()) {
+      at = dateAtTime(addDays(todayISO(now), 1), normalizedReviewReminder.time);
+    }
+    addPlanItem({
+      kind: "dailyReview",
+      seriesId: "daily-review",
+      occurrenceDate: "daily",
+      effectiveDate: todayISO(now),
+      title: "每日回顾",
+      body: "查看今天的活动完成情况，并记录总结、感想和灵感。",
+      at,
+      minutesBefore: 0,
+      mode: "notification",
+      repeatDaily: true,
+      reviewHour: hour,
+      reviewMinute: minute,
     });
   }
 
@@ -380,6 +411,19 @@ async function cancelOwnedNotifications(plugin) {
 }
 
 function scheduledNotification(item, exact, channelId = null) {
+  const schedule = item.repeatDaily
+    ? {
+        on: {
+          hour: item.reviewHour,
+          minute: item.reviewMinute,
+          second: 0,
+        },
+        allowWhileIdle: false,
+      }
+    : {
+        at: item.at,
+        allowWhileIdle: exact,
+      };
   return {
     id: item.id,
     title: item.title,
@@ -389,10 +433,7 @@ function scheduledNotification(item, exact, channelId = null) {
       (item.mode === "alarm" ? ALARM_CHANNEL_ID : NOTIFICATION_CHANNEL_ID),
     isExactNotification: exact,
     isExactMandatory: exact,
-    schedule: {
-      at: item.at,
-      allowWhileIdle: exact,
-    },
+    schedule,
     extra: {
       kind: REMINDER_KIND,
       activityKind: item.kind,
@@ -401,6 +442,7 @@ function scheduledNotification(item, exact, channelId = null) {
       effectiveDate: item.effectiveDate,
       reminderMode: item.mode,
       exact,
+      repeatDaily: item.repeatDaily === true,
       checkinIds: item.checkinIds ?? [],
       checkinTitles: item.titles ?? [],
     },
@@ -409,7 +451,7 @@ function scheduledNotification(item, exact, channelId = null) {
 
 async function syncScheduledNotificationsInternal(
   activities,
-  { endDate } = {},
+  { endDate, reviewReminder = DEFAULT_REVIEW_REMINDER } = {},
 ) {
   const plugin = getPlugin("LocalNotifications");
   if (!plugin) {
@@ -449,6 +491,7 @@ async function syncScheduledNotificationsInternal(
     endDate:
       endDate ??
       getScheduleWindow(todayISO()).endDate,
+    reviewReminder,
   });
   const alarmJobs = plan.filter((item) => item.mode === "alarm");
   const regular = plan.filter((item) => item.mode !== "alarm");

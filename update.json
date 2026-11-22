@@ -1,14 +1,14 @@
 {
-  "versionCode": 7,
-  "versionName": "0.5.0",
+  "versionCode": 8,
+  "versionName": "0.5.1",
   "apkUrl": "https://github.com/snow-wind-114/daily-route/releases/latest/download/daily-route.apk",
-  "releaseUrl": "https://github.com/snow-wind-114/daily-route/releases/tag/v0.5.0",
+  "releaseUrl": "https://github.com/snow-wind-114/daily-route/releases/tag/v0.5.1",
   "notes": [
-    "新增打卡每日通知与闹钟提醒，相同时间自动合并",
-    "本周页将定期、代办和打卡分区显示，打卡不再逐日重复",
-    "桌面组件改为定期、今日截止和打卡三分区布局",
-    "定期活动改为暂停、归档和永久删除整个系列",
-    "修复定期删除确认框不出现和恢复后再次自动归档的问题",
-    "备份格式升级并继续兼容旧版账户、活动和提醒"
+    "新增回顾页，可记录今日总结、感想和灵感",
+    "首次保存时冻结当天活动摘要，回顾只保留今年记录",
+    "每日回顾提醒默认关闭，可设置普通通知时间",
+    "本周页和活动页的打卡月历改为只读，今天页打卡入口不变",
+    "跨年可导出 Markdown 回顾册，确认后清除旧回顾",
+    "统一修正待办功能文案"
   ]
 }

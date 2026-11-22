@@ -3,21 +3,28 @@ import {
   normalizeActivities,
   normalizeCategories,
 } from "./activities.js";
+import {
+  normalizeReviewEntries,
+  normalizeReviewReminder,
+} from "./review.js";
 
 export const BACKUP_FORMAT = "daily-route-backup";
-export const BACKUP_VERSION = 4;
-export const SUPPORTED_BACKUP_VERSIONS = Object.freeze([1, 2, 3, 4]);
+export const BACKUP_VERSION = 5;
+export const SUPPORTED_BACKUP_VERSIONS = Object.freeze([1, 2, 3, 4, 5]);
 
 export function createBackup(
   events,
   {
-    appVersion = "0.5.0",
+    appVersion = "0.5.1",
     categories = emptyCategories(),
     yearMigrationCompletedFor = new Date().getFullYear(),
+    reviewEntries = [],
+    reviewReminder = normalizeReviewReminder(),
     now = new Date(),
   } = {},
 ) {
   const normalizedEvents = normalizeActivities(events);
+  const normalizedReviews = normalizeReviewEntries(reviewEntries);
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
@@ -27,6 +34,9 @@ export function createBackup(
     yearMigrationCompletedFor: Number(yearMigrationCompletedFor),
     categories: normalizeCategories(categories),
     events: normalizedEvents,
+    reviewCount: normalizedReviews.length,
+    reviewEntries: normalizedReviews,
+    reviewReminder: normalizeReviewReminder(reviewReminder),
   };
 }
 
@@ -60,6 +70,13 @@ export function parseBackup(text) {
   }
 
   const year = Number(payload.yearMigrationCompletedFor);
+  const reviewEntries = normalizeReviewEntries(payload.reviewEntries);
+  if (
+    payload.reviewCount !== undefined &&
+    Number(payload.reviewCount) !== reviewEntries.length
+  ) {
+    throw new Error("备份回顾数量校验失败");
+  }
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
@@ -75,6 +92,9 @@ export function parseBackup(text) {
         ? year
         : new Date().getFullYear(),
     events,
+    reviewCount: reviewEntries.length,
+    reviewEntries,
+    reviewReminder: normalizeReviewReminder(payload.reviewReminder),
   };
 }
 

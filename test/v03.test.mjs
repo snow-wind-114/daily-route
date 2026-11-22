@@ -234,7 +234,7 @@ test("series edit preserves only overrides matching the new schedule", () => {
   );
 });
 
-test("native storage migrates to v4 without losing account or events", () => {
+test("native storage migrates to v5 without losing account or events", () => {
   const storage = makeStorage();
   const event = makeSeries({ reminderMode: "notification" });
   storage.setItem(
@@ -272,12 +272,12 @@ test("invalid native storage version is rejected", () => {
   );
 });
 
-test("backup v1 remains importable and v4 omits account credentials", () => {
+test("backup v1 remains importable and v5 omits account credentials", () => {
   const event = makeSeries({ reminderMode: "alarm" });
   const v2 = createBackup([event], {
     now: new Date("2026-11-15T00:00:00.000Z"),
   });
-  assert.equal(v2.version, 4);
+  assert.equal(v2.version, 5);
   assert.equal(JSON.stringify(v2).includes("passwordHash"), false);
 
   const v1 = {
