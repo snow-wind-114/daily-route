@@ -15,6 +15,7 @@ function toNativeJob(item) {
     at: item.at.toISOString(),
     title: item.title,
     body: item.body,
+    checkinIds: item.checkinIds ?? [],
     test: item.test === true,
   };
 }
@@ -91,6 +92,7 @@ export async function consumeAlarmLaunch() {
     seriesId: result.seriesId,
     date: result.date,
     originalDate: result.originalDate || result.date,
+    kind: result.kind || "schedule",
   };
 }
 
@@ -105,6 +107,7 @@ export async function registerAlarmLaunchListener(callback) {
         seriesId: event.seriesId,
         date: event.date,
         originalDate: event.originalDate || event.date,
+        kind: event.kind || "schedule",
       });
     }
   });

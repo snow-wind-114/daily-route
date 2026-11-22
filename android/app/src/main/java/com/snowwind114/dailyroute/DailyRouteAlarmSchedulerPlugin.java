@@ -38,6 +38,7 @@ public class DailyRouteAlarmSchedulerPlugin extends Plugin {
     static final String PENDING_SERIES_KEY = "pending_series_id";
     static final String PENDING_DATE_KEY = "pending_date";
     static final String PENDING_ORIGINAL_DATE_KEY = "pending_original_date";
+    static final String PENDING_KIND_KEY = "pending_kind";
     static final String ACTION_FIRE =
         "com.snowwind114.dailyroute.ALARM_FIRE";
     static final String ACTION_OPEN =
@@ -46,6 +47,7 @@ public class DailyRouteAlarmSchedulerPlugin extends Plugin {
     static final String EXTRA_SOURCE_ID = "alarmSourceId";
     static final String EXTRA_DESTINATION_DATE = "alarmDestinationDate";
     static final String EXTRA_ORIGINAL_DATE = "alarmOriginalDate";
+    static final String EXTRA_KIND = "alarmKind";
     static final String ALARM_CHANNEL_ID = "daily-route-alarms-v1";
 
     @PluginMethod
@@ -173,6 +175,7 @@ public class DailyRouteAlarmSchedulerPlugin extends Plugin {
             PENDING_ORIGINAL_DATE_KEY,
             null
         );
+        String kind = preferences.getString(PENDING_KIND_KEY, "schedule");
         JSObject result = new JSObject();
         if (seriesId != null && date != null) {
             result.put("seriesId", seriesId);
@@ -181,11 +184,13 @@ public class DailyRouteAlarmSchedulerPlugin extends Plugin {
                 "originalDate",
                 originalDate == null ? date : originalDate
             );
+            result.put("kind", kind);
             preferences
                 .edit()
                 .remove(PENDING_SERIES_KEY)
                 .remove(PENDING_DATE_KEY)
                 .remove(PENDING_ORIGINAL_DATE_KEY)
+                .remove(PENDING_KIND_KEY)
                 .apply();
         }
         call.resolve(result);
@@ -218,6 +223,7 @@ public class DailyRouteAlarmSchedulerPlugin extends Plugin {
         String seriesId = intent.getStringExtra(EXTRA_SOURCE_ID);
         String date = intent.getStringExtra(EXTRA_DESTINATION_DATE);
         String originalDate = intent.getStringExtra(EXTRA_ORIGINAL_DATE);
+        String kind = intent.getStringExtra(EXTRA_KIND);
         if (seriesId == null || date == null) {
             return null;
         }
@@ -226,14 +232,17 @@ public class DailyRouteAlarmSchedulerPlugin extends Plugin {
             .putString(PENDING_SERIES_KEY, seriesId)
             .putString(PENDING_DATE_KEY, date)
             .putString(PENDING_ORIGINAL_DATE_KEY, originalDate)
+            .putString(PENDING_KIND_KEY, kind == null ? "schedule" : kind)
             .apply();
         intent.removeExtra(EXTRA_SOURCE_ID);
         intent.removeExtra(EXTRA_DESTINATION_DATE);
         intent.removeExtra(EXTRA_ORIGINAL_DATE);
+        intent.removeExtra(EXTRA_KIND);
         JSObject result = new JSObject();
         result.put("seriesId", seriesId);
         result.put("date", date);
         result.put("originalDate", originalDate == null ? date : originalDate);
+        result.put("kind", kind == null ? "schedule" : kind);
         return result;
     }
 
@@ -379,6 +388,10 @@ public class DailyRouteAlarmSchedulerPlugin extends Plugin {
         openIntent.putExtra(EXTRA_SOURCE_ID, sourceId);
         openIntent.putExtra(EXTRA_DESTINATION_DATE, destinationDate);
         openIntent.putExtra(EXTRA_ORIGINAL_DATE, originalDate);
+        openIntent.putExtra(
+            EXTRA_KIND,
+            job.optString("kind", "schedule")
+        );
         int notificationId = stableId(job.optString("id", sourceId));
         PendingIntent contentIntent = PendingIntent.getActivity(
             context,

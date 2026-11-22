@@ -96,6 +96,11 @@ const result = await evaluate(`(async () => {
     String(tomorrowDate.getMonth() + 1).padStart(2, "0"),
     String(tomorrowDate.getDate()).padStart(2, "0"),
   ].join("-");
+  const today = [
+    new Date().getFullYear(),
+    String(new Date().getMonth() + 1).padStart(2, "0"),
+    String(new Date().getDate()).padStart(2, "0"),
+  ].join("-");
 
   document.querySelector("#addTopButton").click();
   if (!document.querySelector("#eventDialog").open) throw new Error("添加弹窗未打开");
@@ -109,7 +114,7 @@ const result = await evaluate(`(async () => {
   document.querySelector("#addTopButton").click();
   chooseKind("todo");
   input("#eventName", "自动化报告");
-  input("#todoDeadlineDate", tomorrow);
+  input("#todoDeadlineDate", today);
   input("#todoDeadlineTime", "18:00");
   submit();
   await wait();
@@ -125,6 +130,13 @@ const result = await evaluate(`(async () => {
   checkinButton.click();
   await wait();
 
+  document.querySelector("#weekNavButton").click();
+  await wait();
+  const weekTodoRows = document.querySelectorAll(".week-overview-row").length;
+  const weekCheckinRows = document.querySelectorAll(".week-checkin-row").length;
+  const weekDayTodoRows = document.querySelectorAll(".week-event.is-todo").length;
+  const weekDayCheckinRows = document.querySelectorAll(".week-event.is-checkin").length;
+
   document.querySelector("#activityNavButton").click();
   await wait();
   const sections = [
@@ -132,6 +144,30 @@ const result = await evaluate(`(async () => {
     "#todoActivitySection",
     "#checkinActivitySection",
   ].map((selector) => !document.querySelector(selector).hidden);
+
+  document.querySelector("#activeActivityList .activity-main").click();
+  await wait();
+  const lifecycleLabels = {
+    archive: document.querySelector("#archiveEventButton").textContent.trim(),
+    delete: document.querySelector("#deleteEventButton").textContent.trim(),
+  };
+  const modalCalls = [];
+  const originalShowModal = HTMLDialogElement.prototype.showModal;
+  HTMLDialogElement.prototype.showModal = function patchedShowModal() {
+    modalCalls.push(this.id);
+    return originalShowModal.call(this);
+  };
+  let deleteButtonClickSeen = false;
+  document.querySelector("#deleteEventButton").addEventListener(
+    "click",
+    () => { deleteButtonClickSeen = true; },
+    { capture: true, once: true },
+  );
+  document.querySelector("#deleteEventButton").click();
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const scheduleDeleteDialogOpen = document.querySelector("#deleteDialog").open;
+  document.querySelector("#cancelDeleteButton").click();
+  await wait();
 
   document.querySelector("#monthNavButton").click();
   await wait();
@@ -160,6 +196,35 @@ const result = await evaluate(`(async () => {
   await wait();
   document.querySelector("#closeCategoryDialog").click();
 
+  document.querySelector("#activityNavButton").click();
+  await wait();
+  document.querySelector("#activeActivityList .activity-main").click();
+  document.querySelector("#archiveEventButton").click();
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const archiveDialogOpen = document.querySelector("#archiveDialog").open;
+  document.querySelector("#confirmArchiveButton").click();
+  await wait();
+  const archivedBeforeRestore = JSON.parse(
+    localStorage.getItem("daily-route.storage.v1"),
+  ).events.find((event) => event.kind === "schedule").archivedAt;
+  document.querySelector("#inactiveActivityList .activity-resume").click();
+  await wait();
+  const restoreOpenedEdit = document.querySelector("#eventDialog").open;
+  const archivedDuringRestore = JSON.parse(
+    localStorage.getItem("daily-route.storage.v1"),
+  ).events.find((event) => event.kind === "schedule").archivedAt;
+  input("#eventDate", tomorrow);
+  submit();
+  await wait();
+  const eventDialogOpenAfterRestoreSave = document.querySelector("#eventDialog").open;
+  const restoreSaveError = document.querySelector("#formError").textContent;
+  const restoredSchedule = JSON.parse(
+    localStorage.getItem("daily-route.storage.v1"),
+  ).events.find((event) => event.kind === "schedule");
+  const archivedAfterRestoreSave = JSON.parse(
+    localStorage.getItem("daily-route.storage.v1"),
+  ).events.find((event) => event.kind === "schedule").archivedAt;
+
   const stored = JSON.parse(localStorage.getItem("daily-route.storage.v1"));
   return {
     kinds: stored.events.map((event) => event.kind).sort(),
@@ -168,6 +233,33 @@ const result = await evaluate(`(async () => {
     sections,
     todoBadge,
     checkinDayCount,
+    weekTodoRows,
+    weekCheckinRows,
+    weekDayTodoRows,
+    weekDayCheckinRows,
+    lifecycleLabels,
+    scheduleDeleteDialogOpen,
+    eventDialogOpenAfterDelete: document.querySelector("#eventDialog").open,
+    deleteMessageAfterClick: document.querySelector("#deleteDialogMessage").textContent,
+    modalCalls,
+    deleteButtonClickSeen,
+    archiveDialogOpen,
+    archivedBeforeRestore: Boolean(archivedBeforeRestore),
+    restoreOpenedEdit,
+    archivedDuringRestore: Boolean(archivedDuringRestore),
+    archivedAfterRestoreSave,
+    eventDialogOpenAfterRestoreSave,
+    restoreSaveError,
+    restoredScheduleDate: restoredSchedule.date,
+    restoredScheduleCount: restoredSchedule.repeatCount,
+    restoredScheduleStates: stored.events
+      .filter((event) => event.kind === "schedule")
+      .map((event) => ({
+        id: event.id,
+        date: event.date,
+        archivedAt: event.archivedAt,
+      })),
+    checkinReminderHiddenOnWeb: document.querySelector("#checkinReminderField").hidden,
     archiveIncludesTodo: archiveText.includes("自动化报告"),
     viewportWidth: window.innerWidth,
     documentWidth: document.documentElement.scrollWidth,
@@ -183,6 +275,19 @@ if (
   result.sections.some((visible) => !visible) ||
   result.todoBadge !== "1" ||
   result.checkinDayCount !== 42 ||
+  result.weekTodoRows < 1 ||
+  result.weekCheckinRows !== 1 ||
+  result.weekDayTodoRows !== 0 ||
+  result.weekDayCheckinRows !== 0 ||
+  result.lifecycleLabels.archive !== "归档活动" ||
+  result.lifecycleLabels.delete !== "删除整个活动" ||
+  !result.scheduleDeleteDialogOpen ||
+  !result.checkinReminderHiddenOnWeb ||
+  !result.archiveDialogOpen ||
+  !result.archivedBeforeRestore ||
+  !result.restoreOpenedEdit ||
+  !result.archivedDuringRestore ||
+  result.archivedAfterRestoreSave !== null ||
   !result.archiveIncludesTodo ||
   result.categories.schedule.length !== 1 ||
   result.documentWidth > result.viewportWidth ||

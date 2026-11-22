@@ -612,6 +612,118 @@ svg {
   overscroll-behavior: contain;
 }
 
+.week-auxiliary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 8px 0 16px;
+}
+
+.week-overview-panel {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fbfcfe;
+}
+
+.week-overview-panel.is-checkin {
+  grid-column: 1 / -1;
+}
+
+.week-overview-heading {
+  margin-bottom: 7px;
+  color: #566277;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.week-overview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.week-overview-label {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.week-overview-label.is-overdue {
+  color: var(--danger);
+}
+
+.week-overview-row {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 7px;
+  padding: 7px 8px;
+  border: 1px solid #e3eaf5;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.week-overview-row.is-overdue {
+  border-color: #efcccc;
+  background: #fff7f7;
+}
+
+.week-overview-time {
+  color: #7b8698;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.week-overview-name {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.week-checkin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid #efd7d7;
+  border-radius: 9px;
+  background: #fff8f8;
+  color: var(--ink);
+  text-align: left;
+}
+
+.week-checkin-name {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.week-checkin-progress {
+  flex: 0 0 auto;
+  color: var(--danger);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.week-regular-heading {
+  margin: 4px 0 2px;
+  color: #5f6b7e;
+  font-size: 12px;
+  font-weight: 750;
+}
+
 .week-day {
   padding: 13px 0 14px;
   border-bottom: 1px solid var(--line);
@@ -1461,6 +1573,10 @@ svg {
   text-align: center;
 }
 
+#checkinReminderTime {
+  width: 104px;
+}
+
 .reminder-status {
   margin: 0;
   color: var(--muted);
@@ -2105,6 +2221,10 @@ svg {
 
   .android-download-button span {
     display: none;
+  }
+
+  .week-auxiliary {
+    grid-template-columns: 1fr;
   }
 }
 

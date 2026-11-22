@@ -272,12 +272,12 @@ test("invalid native storage version is rejected", () => {
   );
 });
 
-test("backup v1 remains importable and v3 omits account credentials", () => {
+test("backup v1 remains importable and v4 omits account credentials", () => {
   const event = makeSeries({ reminderMode: "alarm" });
   const v2 = createBackup([event], {
     now: new Date("2026-11-15T00:00:00.000Z"),
   });
-  assert.equal(v2.version, 3);
+  assert.equal(v2.version, 4);
   assert.equal(JSON.stringify(v2).includes("passwordHash"), false);
 
   const v1 = {
@@ -516,14 +516,21 @@ test("activity reminder sync never cancels an in-flight test notification", asyn
   delete globalThis.DailyRouteNative;
 });
 
-test("widget snapshot includes the six-month occurrence index", () => {
+test("widget snapshot separates schedules, todos and check-ins", () => {
   const event = makeSeries({ repeatCount: 2, repeatEvery: 1 });
   const snapshot = buildWidgetSnapshot([event], {
     startDate: "2026-11-16",
     endDate: "2026-11-18",
   });
-  assert.equal(snapshot.days["2026-11-16"][0].title, "项目会议");
-  assert.equal(snapshot.days["2026-11-17"][0].startTime, "14:30");
+  assert.equal(snapshot.version, 2);
+  assert.equal(
+    snapshot.days["2026-11-16"].schedules[0].title,
+    "项目会议",
+  );
+  assert.equal(
+    snapshot.days["2026-11-17"].schedules[0].startTime,
+    "14:30",
+  );
   assert.equal(snapshot.days["2026-11-18"], undefined);
 });
 

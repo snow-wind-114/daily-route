@@ -1,5 +1,7 @@
 import {
   isActivityArchived,
+  isActivityPaused,
+  isDatePausedForCheckin,
   todoReminderDate,
 } from "./activities.js";
 import {
@@ -8,6 +10,7 @@ import {
   syncNativeAlarmJobs,
 } from "./alarm-scheduler.js";
 import {
+  addDays,
   getScheduleWindow,
   parseISODate,
   timeToMinutes,
@@ -57,6 +60,23 @@ function reminderDate(occurrence, minutesBefore) {
   );
   result.setMinutes(result.getMinutes() - minutesBefore);
   return result;
+}
+
+function dateAtTime(isoDate, time) {
+  const date = parseISODate(isoDate);
+  const minutes = timeToMinutes(time);
+  if (!date || minutes === null) {
+    return null;
+  }
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    Math.floor(minutes / 60),
+    minutes % 60,
+    0,
+    0,
+  );
 }
 
 export function notificationId(identity, occurrenceDate) {
@@ -135,6 +155,54 @@ export function buildReminderPlan(
       at: todoReminderDate(activity),
       minutesBefore: activity.reminderDaysBefore * 1440,
       mode: activity.reminderMode,
+    });
+  }
+
+  const checkinGroups = new Map();
+  for (let date = startDate; date <= endDate; date = addDays(date, 1)) {
+    for (const activity of activities) {
+      if (
+        activity.kind !== "checkin" ||
+        isActivityArchived(activity) ||
+        isActivityPaused(activity) ||
+        activity.reminderMode === "none" ||
+        Number(date.slice(0, 4)) !== activity.year ||
+        activity.checkInDates.includes(date) ||
+        isDatePausedForCheckin(activity, date)
+      ) {
+        continue;
+      }
+      const at = dateAtTime(date, activity.reminderTime);
+      if (!at || at.getTime() <= now.getTime()) {
+        continue;
+      }
+      const key = `${activity.reminderMode}|${at.getTime()}`;
+      const group = checkinGroups.get(key) ?? {
+        kind: "checkinGroup",
+        seriesId:
+          `checkin-group:${activity.reminderMode}:` +
+          activity.reminderTime,
+        occurrenceDate: date,
+        effectiveDate: date,
+        at,
+        minutesBefore: 0,
+        mode: activity.reminderMode,
+        checkinIds: [],
+        titles: [],
+      };
+      group.checkinIds.push(activity.id);
+      group.titles.push(activity.title);
+      checkinGroups.set(key, group);
+    }
+  }
+  for (const group of checkinGroups.values()) {
+    addPlanItem({
+      ...group,
+      title:
+        group.titles.length === 1
+          ? `打卡提醒：${group.titles[0]}`
+          : `${group.titles.length}项待打卡`,
+      body: `今天还未打卡：${group.titles.join("、")}`,
     });
   }
 
@@ -333,6 +401,8 @@ function scheduledNotification(item, exact, channelId = null) {
       effectiveDate: item.effectiveDate,
       reminderMode: item.mode,
       exact,
+      checkinIds: item.checkinIds ?? [],
+      checkinTitles: item.titles ?? [],
     },
   };
 }

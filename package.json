@@ -1,6 +1,6 @@
 {
   "name": "daily-route",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "packageManager": "npm@12.2.2",

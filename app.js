@@ -17,7 +17,6 @@ import {
 } from "./date-utils.js";
 import {
   applyOccurrenceOverride,
-  deleteOccurrenceAndFuture,
   findConflictWithinRange,
   findScheduleConflict,
   getOccurrenceOverride,
@@ -36,6 +35,7 @@ import {
 } from "./schedule.js";
 import {
   ACTIVITY_KIND_LABELS,
+  DEFAULT_CHECKIN_REMINDER_TIME,
   activeCheckinsForDate,
   addCategory,
   archiveActivity,
@@ -53,13 +53,13 @@ import {
   overdueTodos,
   pauseCheckin,
   renameCategory,
-  restoreActivity,
   resumeCheckin,
   todoCountByDate,
   todoFromInput,
   todosDueOnDate,
   toggleCheckin,
   validateTodoInput,
+  validateCheckinInput,
 } from "./activities.js";
 import {
   createLocalAccount,
@@ -114,8 +114,8 @@ import {
   syncNativeWidgetSnapshot,
 } from "./native-widget.js";
 
-const APP_VERSION = "0.4.0";
-const APP_VERSION_CODE = 6;
+const APP_VERSION = "0.5.0";
+const APP_VERSION_CODE = 7;
 const SLOT_HEIGHT = 44;
 const PIXELS_PER_MINUTE = SLOT_HEIGHT / 30;
 const nativeApp = isNativeApp();
@@ -238,16 +238,32 @@ const elements = {
   todoReminderDaysBefore: document.querySelector("#todoReminderDaysBefore"),
   todoReminderStatusNote: document.querySelector("#todoReminderStatusNote"),
   checkinFormNote: document.querySelector("#checkinFormNote"),
+  checkinReminderField: document.querySelector("#checkinReminderField"),
+  checkinReminderModeInputs: document.querySelectorAll(
+    'input[name="checkinReminderMode"]',
+  ),
+  checkinReminderTimeField: document.querySelector(
+    "#checkinReminderTimeField",
+  ),
+  checkinReminderTime: document.querySelector("#checkinReminderTime"),
+  checkinReminderStatusNote: document.querySelector(
+    "#checkinReminderStatusNote",
+  ),
   eventNotes: document.querySelector("#eventNotes"),
   editScopeNote: document.querySelector("#editScopeNote"),
   formError: document.querySelector("#formError"),
   pauseEventButton: document.querySelector("#pauseEventButton"),
-  completeEventButton: document.querySelector("#completeEventButton"),
+  archiveEventButton: document.querySelector("#archiveEventButton"),
   deleteEventButton: document.querySelector("#deleteEventButton"),
   deleteDialog: document.querySelector("#deleteDialog"),
   deleteDialogMessage: document.querySelector("#deleteDialogMessage"),
   cancelDeleteButton: document.querySelector("#cancelDeleteButton"),
   confirmDeleteButton: document.querySelector("#confirmDeleteButton"),
+  archiveDialog: document.querySelector("#archiveDialog"),
+  archiveDialogTitle: document.querySelector("#archiveDialogTitle"),
+  archiveDialogMessage: document.querySelector("#archiveDialogMessage"),
+  cancelArchiveButton: document.querySelector("#cancelArchiveButton"),
+  confirmArchiveButton: document.querySelector("#confirmArchiveButton"),
   accountDialog: document.querySelector("#accountDialog"),
   accountName: document.querySelector("#accountName"),
   notificationPermissionText: document.querySelector(
@@ -356,6 +372,8 @@ const state = {
   monthCursor: startOfMonth(todayISO()),
   editing: null,
   pendingDelete: null,
+  pendingArchive: null,
+  restoringActivityId: null,
   activityQuery: "",
   autoScrollDay: true,
   dayScrollTarget: null,
@@ -669,10 +687,32 @@ function configurePlatformControls() {
   elements.accountButton.hidden = true;
   elements.reminderField.hidden = !nativeApp;
   elements.todoReminderField.hidden = !nativeApp;
+  elements.checkinReminderField.hidden = !nativeApp;
 }
 
-function openOccurrenceFromExternal({ seriesId, date, originalDate }) {
+function openOccurrenceFromExternal({
+  seriesId,
+  date,
+  originalDate,
+  kind,
+}) {
   if (!state.authenticated) {
+    return;
+  }
+  if (
+    kind === "checkinGroup" ||
+    kind === "checkinSummary" ||
+    seriesId?.startsWith("checkin-group:")
+  ) {
+    state.view = "activity";
+    state.archiveMode = false;
+    render();
+    requestAnimationFrame(() => {
+      elements.checkinActivitySection.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
     return;
   }
 
@@ -719,11 +759,17 @@ function openOccurrenceFromExternal({ seriesId, date, originalDate }) {
   render({ scrollTargetMinutes: state.dayScrollTarget });
 }
 
-function handleNotificationAction({ seriesId, occurrenceDate, effectiveDate }) {
+function handleNotificationAction({
+  seriesId,
+  occurrenceDate,
+  effectiveDate,
+  activityKind,
+}) {
   openOccurrenceFromExternal({
     seriesId,
     date: effectiveDate || occurrenceDate,
     originalDate: occurrenceDate,
+    kind: activityKind,
   });
 }
 
@@ -1222,6 +1268,7 @@ function archiveCompletedSchedules() {
     if (
       activity.kind !== "schedule" ||
       isActivityArchived(activity) ||
+      state.restoringActivityId === activity.id ||
       isActivityPaused(activity)
     ) {
       return activity;
@@ -1616,18 +1663,60 @@ function renderWeek(window) {
   const firstWeek = startOfWeek(window.startDate);
   const lastWeek = startOfWeek(window.endDate);
   const currentWeek = startOfWeek(todayISO());
+  const overdue = overdueTodos(state.events);
+  const dueByDate = new Map();
+  if (visibleStart <= visibleEnd) {
+    for (let date = visibleStart; date <= visibleEnd; date = addDays(date, 1)) {
+      const items = todosDueOnDate(state.events, date).filter(
+        (activity) => !isTodoOverdue(activity),
+      );
+      if (items.length > 0) {
+        dueByDate.set(date, items);
+      }
+    }
+  }
+  const dueCount = [...dueByDate.values()].reduce(
+    (total, items) => total + items.length,
+    0,
+  );
+  const activeCheckins = state.events.filter(
+    (activity) =>
+      activity.kind === "checkin" &&
+      !isActivityArchived(activity) &&
+      !isActivityPaused(activity) &&
+      !(
+        weekEnd < `${activity.year}-01-01` ||
+        weekStart > `${activity.year}-12-31`
+      ),
+  );
 
   elements.viewKicker.textContent =
     weekStart === currentWeek ? "本周" : "周安排";
   elements.viewTitle.textContent =
     `${formatShortDate(weekStart)}–${formatShortDate(weekEnd)}`;
-  elements.viewSummary.textContent = `${occurrences.length} 项定期安排`;
+  elements.viewSummary.textContent =
+    `${occurrences.length} 项定期 · ${overdue.length + dueCount} 项代办 · ` +
+    `${activeCheckins.length} 项打卡`;
   elements.previousWeekButton.disabled = weekStart <= firstWeek;
   elements.nextWeekButton.disabled = weekStart >= lastWeek;
   elements.goCurrentWeekButton.disabled = weekStart === currentWeek;
 
   const fragment = document.createDocumentFragment();
   const today = todayISO();
+  const auxiliary = createWeekAuxiliary(
+    overdue,
+    dueByDate,
+    activeCheckins,
+    weekStart,
+    weekEnd,
+  );
+  if (auxiliary) {
+    fragment.append(auxiliary);
+  }
+  const regularHeading = document.createElement("div");
+  regularHeading.className = "week-regular-heading";
+  regularHeading.textContent = "七天定期安排";
+  fragment.append(regularHeading);
 
   for (let offset = 0; offset < 7; offset += 1) {
     const date = addDays(weekStart, offset);
@@ -1635,13 +1724,6 @@ function renderWeek(window) {
     const dayOccurrences = enabled
       ? occurrencesOnDate(state.events, date)
       : [];
-    const dayTodos = enabled
-      ? todosDueOnDate(state.events, date)
-      : [];
-    const dayCheckins =
-      enabled && date <= today
-        ? activeCheckinsForDate(state.events, date)
-        : [];
     const day = document.createElement("article");
     const header = document.createElement("div");
     const dateButton = document.createElement("button");
@@ -1664,20 +1746,16 @@ function renderWeek(window) {
     dateLabel.textContent = formatShortDate(date);
     count.className = "week-day-count";
     count.textContent = enabled
-      ? `${dayOccurrences.length + dayTodos.length + dayCheckins.length} 项`
+      ? `${dayOccurrences.length} 项定期`
       : "不可查看";
     dateButton.append(weekday, dateLabel);
     header.append(dateButton, count);
     events.className = "week-events";
 
-    if (
-      dayOccurrences.length === 0 &&
-      dayTodos.length === 0 &&
-      dayCheckins.length === 0
-    ) {
+    if (dayOccurrences.length === 0) {
       const empty = document.createElement("div");
       empty.className = "week-empty";
-      empty.textContent = enabled ? "暂无安排" : "过去日期不可查看";
+      empty.textContent = enabled ? "暂无定期安排" : "不在今年范围内";
       events.append(empty);
     } else {
       for (const occurrence of dayOccurrences) {
@@ -1706,50 +1784,6 @@ function renderWeek(window) {
       }
     }
 
-    for (const activity of dayTodos) {
-      const eventButton = document.createElement("button");
-      const time = document.createElement("span");
-      const name = document.createElement("span");
-      eventButton.type = "button";
-      eventButton.className = "week-event is-todo";
-      time.className = "week-event-time";
-      time.textContent = `${activity.deadlineTime} 截止`;
-      name.className = "week-event-name";
-      name.textContent = activity.title;
-      eventButton.append(time, name);
-      eventButton.addEventListener("click", () =>
-        openTodoEditDialog(activity),
-      );
-      events.append(eventButton);
-    }
-
-    for (const activity of dayCheckins) {
-      const eventButton = document.createElement("button");
-      const time = document.createElement("span");
-      const name = document.createElement("span");
-      eventButton.type = "button";
-      eventButton.className = "week-event is-checkin";
-      time.className = "week-event-time";
-      time.textContent = isCheckedIn(activity, date) ? "已打卡" : "可打卡";
-      name.className = "week-event-name";
-      name.textContent = activity.title;
-      eventButton.append(time, name);
-      eventButton.addEventListener("click", () => {
-        try {
-          state.events = state.events.map((event) =>
-            event.id === activity.id
-              ? toggleCheckin(event, date)
-              : event,
-          );
-          persistEvents();
-          render();
-        } catch (error) {
-          showToast(error.message);
-        }
-      });
-      events.append(eventButton);
-    }
-
     if (enabled) {
       dateButton.addEventListener("click", () => {
         state.selectedDate = date;
@@ -1764,6 +1798,114 @@ function renderWeek(window) {
   }
 
   elements.weekList.replaceChildren(fragment);
+}
+
+function createWeekAuxiliary(
+  overdue,
+  dueByDate,
+  activeCheckins,
+  weekStart,
+  weekEnd,
+) {
+  if (
+    overdue.length === 0 &&
+    dueByDate.size === 0 &&
+    activeCheckins.length === 0
+  ) {
+    return null;
+  }
+  const wrapper = document.createElement("div");
+  wrapper.className = "week-auxiliary";
+
+  if (overdue.length > 0 || dueByDate.size > 0) {
+    const panel = document.createElement("section");
+    const heading = document.createElement("div");
+    const list = document.createElement("div");
+    panel.className = "week-overview-panel is-todo";
+    heading.className = "week-overview-heading";
+    heading.textContent = "本周代办";
+    list.className = "week-overview-list";
+    if (overdue.length > 0) {
+      const overdueLabel = document.createElement("div");
+      overdueLabel.className = "week-overview-label is-overdue";
+      overdueLabel.textContent = `逾期 · ${overdue.length}`;
+      list.append(overdueLabel);
+      for (const activity of overdue) {
+        list.append(createWeekTodoItem(activity, true));
+      }
+    }
+    for (const [date, items] of [...dueByDate.entries()].sort(
+      ([left], [right]) => left.localeCompare(right),
+    )) {
+      const label = document.createElement("div");
+      label.className = "week-overview-label";
+      label.textContent = formatDayTitle(date);
+      list.append(label);
+      for (const activity of items) {
+        list.append(createWeekTodoItem(activity, false));
+      }
+    }
+    panel.append(heading, list);
+    wrapper.append(panel);
+  }
+
+  if (activeCheckins.length > 0) {
+    const panel = document.createElement("section");
+    const heading = document.createElement("div");
+    const list = document.createElement("div");
+    panel.className = "week-overview-panel is-checkin";
+    heading.className = "week-overview-heading";
+    heading.textContent = "本周打卡";
+    list.className = "week-overview-list";
+    for (const activity of activeCheckins) {
+      const start = weekStart < `${activity.year}-01-01`
+        ? `${activity.year}-01-01`
+        : weekStart;
+      const end = weekEnd > `${activity.year}-12-31`
+        ? `${activity.year}-12-31`
+        : weekEnd;
+      const count =
+        start <= end
+          ? checkinDatesBetween(activity, start, end).length
+          : 0;
+      const button = document.createElement("button");
+      const name = document.createElement("span");
+      const progress = document.createElement("span");
+      button.type = "button";
+      button.className = "week-checkin-row";
+      name.className = "week-checkin-name";
+      name.textContent = activity.title;
+      progress.className = "week-checkin-progress";
+      progress.textContent = `${count}/7 天`;
+      button.append(name, progress);
+      button.addEventListener("click", () =>
+        openCheckinCalendar(activity, start),
+      );
+      list.append(button);
+    }
+    panel.append(heading, list);
+    wrapper.append(panel);
+  }
+
+  return wrapper;
+}
+
+function createWeekTodoItem(activity, overdue) {
+  const button = document.createElement("button");
+  const time = document.createElement("span");
+  const name = document.createElement("span");
+  button.type = "button";
+  button.className =
+    `week-overview-row${overdue ? " is-overdue" : ""}`;
+  time.className = "week-overview-time";
+  time.textContent = overdue
+    ? `${formatShortDate(activity.deadlineDate)} ${activity.deadlineTime}`
+    : activity.deadlineTime;
+  name.className = "week-overview-name";
+  name.textContent = activity.title;
+  button.append(time, name);
+  button.addEventListener("click", () => openTodoEditDialog(activity));
+  return button;
 }
 
 function renderMonth(window) {
@@ -1910,6 +2052,11 @@ function formatRecurrenceRule(series) {
 }
 
 function reminderLabel(series) {
+  if (series.kind === "checkin") {
+    return series.reminderMode === "none"
+      ? "不提醒"
+      : `${series.reminderMode === "alarm" ? "闹钟" : "通知"} · 每天 ${series.reminderTime}`;
+  }
   if (series.kind === "todo") {
     return series.reminderMode === "none"
       ? "不提醒"
@@ -2190,7 +2337,8 @@ function createCheckinActivityRow(activity) {
       activity,
       `${activity.year}-01-01`,
       `${activity.year}-12-31`,
-    ).length} 天`;
+    ).length} 天` +
+    (nativeApp ? ` · ${reminderLabel(activity)}` : "");
   copy.append(name, rule);
   main.append(copy);
   main.addEventListener("click", () => openCheckinEditDialog(activity));
@@ -2334,31 +2482,14 @@ function renderArchiveGroups(archived) {
 }
 
 function restoreArchivedActivity(activity) {
-  snapshotBefore("恢复归档活动前");
-  state.events = restoreActivity(state.events, activity.id);
-  state.archiveMode = false;
-  persistEvents();
-  render();
-  const restored = state.events.find((item) => item.id === activity.id);
-  if (restored?.kind === "todo") {
-    openTodoEditDialog(restored);
-  } else if (restored?.kind === "checkin" && restored.year !== Number(todayISO().slice(0, 4))) {
-    openCheckinEditDialog(restored);
-  } else if (restored?.kind === "schedule") {
-    const next = occurrencesBetween(
-      [restored],
-      todayISO(),
-      `${restored.year}-12-31`,
-    )[0];
-    if (next) {
-      openEditDialog(next.originalSeries, next.originalDate, {
-        preferFuture: true,
-      });
-    } else {
-      showToast("已恢复；请编辑为当前年度日期");
-    }
+  state.restoringActivityId = activity.id;
+  if (activity.kind === "todo") {
+    openTodoEditDialog(activity);
+  } else if (activity.kind === "checkin") {
+    openCheckinEditDialog(activity);
+  } else {
+    openEditDialog(activity, activity.date, { preferFuture: true });
   }
-  showToast("归档项目已恢复");
 }
 
 function renderCategoryOptions() {
@@ -2463,6 +2594,34 @@ function updateTodoReminderUi() {
   elements.todoReminderField.classList.toggle("is-disabled", !enabled);
 }
 
+function currentCheckinReminderMode() {
+  return (
+    [...elements.checkinReminderModeInputs].find((input) => input.checked)
+      ?.value ?? "none"
+  );
+}
+
+function setCheckinReminderMode(mode) {
+  for (const input of elements.checkinReminderModeInputs) {
+    input.checked = input.value === mode;
+  }
+  updateCheckinReminderUi();
+}
+
+function updateCheckinReminderUi() {
+  const enabled = currentCheckinReminderMode() !== "none";
+  elements.checkinReminderTime.disabled = !enabled;
+  elements.checkinReminderTime.required = enabled;
+  elements.checkinReminderTimeField.classList.toggle(
+    "is-disabled",
+    !enabled,
+  );
+  elements.checkinReminderField.classList.toggle(
+    "is-disabled",
+    !enabled,
+  );
+}
+
 function populateFormCategories(kind, selectedId = null) {
   const options = [document.createElement("option")];
   options[0].value = "";
@@ -2496,10 +2655,15 @@ function updateActivityFormUi() {
   elements.todoDeadlineTimeField.hidden = !todo;
   elements.todoReminderField.hidden = !nativeApp || !todo;
   elements.checkinFormNote.hidden = !checkin;
+  elements.checkinReminderField.hidden = !nativeApp || !checkin;
   elements.editScopeField.hidden = !editing || !schedule;
   elements.editScopeNote.hidden = !editing || !schedule;
-  elements.pauseEventButton.hidden = !editing || (!schedule && !checkin);
-  elements.completeEventButton.hidden = !editing || (!todo && !checkin);
+  const archived = state.editing?.archived === true;
+  elements.pauseEventButton.hidden =
+    !editing || archived || (!schedule && !checkin);
+  elements.archiveEventButton.hidden = !editing || archived;
+  elements.archiveEventButton.textContent =
+    todo || checkin ? "完成并归档" : "归档活动";
   elements.deleteEventButton.hidden = !editing;
   if (!editing || !schedule) {
     elements.activityCategory.disabled = false;
@@ -2519,7 +2683,12 @@ function openAddDialog(date = state.selectedDate) {
   }
 
   const defaults = defaultTimes(date);
+  const restored = Boolean(state.restoringActivityId);
   state.editing = null;
+  state.restoringActivityId = null;
+  if (restored) {
+    state.archiveMode = false;
+  }
   state.confirmedOverrideDiscard = false;
   elements.eventForm.reset();
   elements.eventDialogKicker.textContent = "新活动";
@@ -2538,10 +2707,12 @@ function openAddDialog(date = state.selectedDate) {
   elements.repeatCount.value = "1";
   elements.reminderMinutesBefore.value = "5";
   elements.todoReminderDaysBefore.value = "0";
+  elements.checkinReminderTime.value = DEFAULT_CHECKIN_REMINDER_TIME;
   elements.eventNotes.value = "";
   setReminderMode("none");
   setRepeatMode("limited");
   setTodoReminderMode("none");
+  setCheckinReminderMode("none");
   setActivityKind("schedule");
   updateReminderUi();
   elements.formError.hidden = true;
@@ -2552,15 +2723,18 @@ function openAddDialog(date = state.selectedDate) {
 function openEditDialog(series, occurrenceDate, { preferFuture = false } = {}) {
   const window = getScheduleWindow(`${series.year}-01-01`);
   const remaining = remainingRepeatCount(series, occurrenceDate);
+  const initialScope = preferFuture ? "future" : "single";
   if (getOccurrenceIndex(series, occurrenceDate) === null) {
     showToast("这条活动已无法编辑");
     return;
   }
 
   state.editing = {
+    kind: "schedule",
     seriesId: series.id,
     occurrenceDate,
-    scope: preferFuture ? "future" : "single",
+    scope: initialScope,
+    archived: Boolean(series.archivedAt),
   };
   state.confirmedOverrideDiscard = false;
 
@@ -2598,7 +2772,7 @@ function openEditDialog(series, occurrenceDate, { preferFuture = false } = {}) {
   }
 
   elements.eventNotes.value = displaySeries.notes ?? "";
-  setEditScope(state.editing.scope);
+  setEditScope(initialScope);
   updateReminderUi();
   updateActivityFormUi();
   elements.formError.hidden = true;
@@ -2607,12 +2781,20 @@ function openEditDialog(series, occurrenceDate, { preferFuture = false } = {}) {
 }
 
 function openTodoEditDialog(activity) {
-  state.editing = { kind: "todo", activityId: activity.id };
+  state.editing = {
+    kind: "todo",
+    activityId: activity.id,
+    archived: Boolean(activity.archivedAt),
+  };
   state.confirmedOverrideDiscard = false;
   elements.eventForm.reset();
   elements.eventDialogKicker.textContent = "编辑代办";
   elements.eventDialogTitle.textContent = "编辑代办";
-  state.editing = { kind: "todo", activityId: activity.id };
+  state.editing = {
+    kind: "todo",
+    activityId: activity.id,
+    archived: Boolean(activity.archivedAt),
+  };
   setActivityKind("todo");
   elements.eventName.value = activity.title;
   populateFormCategories("todo", activity.categoryId);
@@ -2631,7 +2813,11 @@ function openTodoEditDialog(activity) {
 }
 
 function openCheckinEditDialog(activity) {
-  state.editing = { kind: "checkin", activityId: activity.id };
+  state.editing = {
+    kind: "checkin",
+    activityId: activity.id,
+    archived: Boolean(activity.archivedAt),
+  };
   state.confirmedOverrideDiscard = false;
   elements.eventForm.reset();
   elements.eventDialogKicker.textContent = "编辑打卡";
@@ -2640,6 +2826,9 @@ function openCheckinEditDialog(activity) {
   populateFormCategories("checkin", activity.categoryId);
   elements.eventName.value = activity.title;
   elements.eventNotes.value = activity.notes;
+  elements.checkinReminderTime.value =
+    activity.reminderTime ?? DEFAULT_CHECKIN_REMINDER_TIME;
+  setCheckinReminderMode(activity.reminderMode ?? "none");
   elements.formError.hidden = true;
   updateActivityFormUi();
   elements.eventDialog.showModal();
@@ -2908,6 +3097,7 @@ function handleScheduleSubmit() {
   state.autoScrollDay = true;
   state.dayScrollTarget = eventStartMinutes - 60;
   state.editing = null;
+  state.restoringActivityId = null;
   state.confirmedOverrideDiscard = false;
   persistEvents();
   elements.eventDialog.close();
@@ -2964,9 +3154,16 @@ function handleTodoSubmit() {
 }
 
 function handleCheckinSubmit() {
-  const title = elements.eventName.value.trim();
-  if (!title) {
-    elements.formError.textContent = "请填写打卡名称";
+  const input = {
+    title: elements.eventName.value,
+    reminderMode: nativeApp ? currentCheckinReminderMode() : "none",
+    reminderTime:
+      elements.checkinReminderTime.value ||
+      DEFAULT_CHECKIN_REMINDER_TIME,
+  };
+  const error = validateCheckinInput(input);
+  if (error) {
+    elements.formError.textContent = error;
     elements.formError.hidden = false;
     return;
   }
@@ -2980,11 +3177,13 @@ function handleCheckinSubmit() {
     existing?.year ?? Number(todayISO().slice(0, 4));
   const candidate = checkinFromInput(
     {
-      title,
+      title: input.title,
       notes: elements.eventNotes.value.trim(),
       checkInDates:
         existing?.year === currentYear ? existing.checkInDates : [],
       pauses: existing?.year === currentYear ? existing.pauses : [],
+      reminderMode: input.reminderMode,
+      reminderTime: input.reminderTime,
     },
     {
       year: currentYear,
@@ -3010,6 +3209,7 @@ function handleCheckinSubmit() {
 }
 
 function finishActivitySave(date, scrollMinutes, message) {
+  const restored = Boolean(state.restoringActivityId);
   state.selectedDate = date;
   state.monthCursor = startOfMonth(date);
   state.view = "day";
@@ -3017,6 +3217,10 @@ function finishActivitySave(date, scrollMinutes, message) {
   state.dayScrollTarget =
     Number.isFinite(scrollMinutes) ? scrollMinutes : null;
   state.editing = null;
+  state.restoringActivityId = null;
+  if (restored) {
+    state.archiveMode = false;
+  }
   state.confirmedOverrideDiscard = false;
   persistEvents();
   elements.eventDialog.close();
@@ -3036,52 +3240,43 @@ function confirmOverrideDiscard() {
   state.pendingSeriesEdit = null;
 }
 
+function showConfirmationAfterEdit(dialog) {
+  const show = () => {
+    window.setTimeout(() => {
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+    }, 40);
+  };
+  if (elements.eventDialog.open) {
+    elements.eventDialog.addEventListener("close", show, { once: true });
+    elements.eventDialog.close();
+  } else {
+    show();
+  }
+}
+
 function openDeleteConfirmation() {
   if (!state.editing) {
     return;
   }
-  if (state.editing.kind !== "schedule") {
-    const activity = state.events.find(
-      (event) => event.id === state.editing.activityId,
-    );
-    if (!activity) {
-      showToast("找不到要删除的活动");
-      return;
-    }
-    state.pendingDelete = {
-      kind: "series",
-      seriesId: activity.id,
-    };
-    elements.deleteDialogMessage.textContent =
-      `将永久删除「${activity.title}」。`;
-    elements.eventDialog.close();
-    elements.deleteDialog.showModal();
-    return;
-  }
-
-  const series = state.events.find(
-    (event) => event.id === state.editing.seriesId,
-  );
-  const index = series
-    ? getOccurrenceIndex(series, state.editing.occurrenceDate)
-    : null;
-
-  if (!series || index === null) {
+  const activityId =
+    state.editing.kind === "schedule"
+      ? state.editing.seriesId
+      : state.editing.activityId;
+  const activity = state.events.find((event) => event.id === activityId);
+  if (!activity) {
     showToast("找不到要删除的活动");
     return;
   }
 
-  elements.deleteDialogMessage.textContent =
-    index === 0
-      ? "将删除整个活动及其后续安排。"
-      : "将删除本次及以后的活动，之前的安排保持不变。";
   state.pendingDelete = {
-    kind: "occurrence",
-    seriesId: state.editing.seriesId,
-    occurrenceDate: state.editing.occurrenceDate,
+    kind: "series",
+    seriesId: activity.id,
   };
-  elements.eventDialog.close();
-  elements.deleteDialog.showModal();
+  elements.deleteDialogMessage.textContent =
+    `将永久删除「${activity.title}」的整个活动及全部历史记录，且无法撤销。`;
+  showConfirmationAfterEdit(elements.deleteDialog);
 }
 
 function openSeriesDeleteConfirmation(series) {
@@ -3102,17 +3297,9 @@ function confirmDelete() {
 
   try {
     snapshotBefore("删除活动前");
-    if (state.pendingDelete.kind === "series") {
-      state.events = state.events.filter(
-        (event) => event.id !== state.pendingDelete.seriesId,
-      );
-    } else {
-      state.events = deleteOccurrenceAndFuture(
-        state.events,
-        state.pendingDelete.seriesId,
-        state.pendingDelete.occurrenceDate,
-      );
-    }
+    state.events = state.events.filter(
+      (event) => event.id !== state.pendingDelete.seriesId,
+    );
     state.editing = null;
     state.pendingDelete = null;
     persistEvents();
@@ -3130,43 +3317,27 @@ function openPauseConfirmation() {
   if (!state.editing) {
     return;
   }
-  if (state.editing.kind === "checkin") {
-    const activity = state.events.find(
-      (event) => event.id === state.editing.activityId,
-    );
-    if (!activity) {
-      showToast("找不到要暂停的打卡项目");
-      return;
-    }
-    state.events = state.events.map((event) =>
-      event.id === activity.id
-        ? pauseCheckin(event, todayISO())
-        : event,
-    );
-    persistEvents();
-    elements.eventDialog.close();
-    state.editing = null;
-    render();
-    showToast("打卡项目已暂停");
-    return;
-  }
-  const series = state.events.find(
-    (event) => event.id === state.editing.seriesId,
-  );
-  if (!series || getOccurrenceIndex(series, state.editing.occurrenceDate) === null) {
+  const activityId =
+    state.editing.kind === "schedule"
+      ? state.editing.seriesId
+      : state.editing.activityId;
+  const activity = state.events.find((event) => event.id === activityId);
+  if (!activity) {
     showToast("找不到要暂停的活动");
     return;
   }
 
   state.pendingPause = {
-    seriesId: state.editing.seriesId,
+    kind: activity.kind,
+    seriesId: activity.id,
     occurrenceDate: state.editing.occurrenceDate,
   };
   elements.pauseDialogMessage.textContent =
-    `将从 ${formatShortDate(state.editing.occurrenceDate)} 起暂停「${series.title}」。` +
-    "暂停期间不提醒，也不消耗有限次数；恢复后会从下一个原周期日期继续。";
-  elements.eventDialog.close();
-  elements.pauseDialog.showModal();
+    activity.kind === "checkin"
+      ? `将从今天起暂停「${activity.title}」的打卡和提醒，之后可随时恢复。`
+      : `将从 ${formatShortDate(state.editing.occurrenceDate)} 起暂停「${activity.title}」。` +
+        "暂停期间不提醒，也不消耗有限次数；恢复后会从下一个原周期日期继续。";
+  showConfirmationAfterEdit(elements.pauseDialog);
 }
 
 function confirmPause() {
@@ -3177,13 +3348,22 @@ function confirmPause() {
 
   try {
     snapshotBefore("暂停活动前");
-    state.events = pauseSeries(
-      state.events,
-      state.pendingPause.seriesId,
-      state.pendingPause.occurrenceDate,
-    );
+    if (state.pendingPause.kind === "checkin") {
+      state.events = state.events.map((event) =>
+        event.id === state.pendingPause.seriesId
+          ? pauseCheckin(event, todayISO())
+          : event,
+      );
+    } else {
+      state.events = pauseSeries(
+        state.events,
+        state.pendingPause.seriesId,
+        state.pendingPause.occurrenceDate,
+      );
+    }
     state.pendingPause = null;
     state.editing = null;
+    state.restoringActivityId = null;
     persistEvents();
     elements.pauseDialog.close();
     render();
@@ -3195,33 +3375,67 @@ function confirmPause() {
   }
 }
 
-function completeEditingActivity() {
-  if (
-    !state.editing ||
-    !["todo", "checkin"].includes(state.editing.kind)
-  ) {
+function openArchiveConfirmation() {
+  if (!state.editing) {
+    return;
+  }
+  const activityId =
+    state.editing.kind === "schedule"
+      ? state.editing.seriesId
+      : state.editing.activityId;
+  const activity = state.events.find((event) => event.id === activityId);
+  if (!activity) {
+    return;
+  }
+  state.pendingArchive = { activityId: activity.id };
+  const completed =
+    activity.kind === "todo" || activity.kind === "checkin";
+  elements.archiveDialogTitle.textContent = completed
+    ? "完成并归档？"
+    : "归档整个活动？";
+  elements.archiveDialogMessage.textContent = completed
+    ? `「${activity.title}」将标记为已完成并移入归档，未来提醒会停止。`
+    : `「${activity.title}」将立即停止后续安排和提醒，并移入归档；之后可恢复编辑。`;
+  elements.confirmArchiveButton.textContent = completed
+    ? "完成并归档"
+    : "归档活动";
+  showConfirmationAfterEdit(elements.archiveDialog);
+}
+
+function confirmArchive() {
+  if (!state.pendingArchive) {
+    elements.archiveDialog.close();
     return;
   }
   const activity = state.events.find(
-    (event) => event.id === state.editing.activityId,
+    (event) => event.id === state.pendingArchive.activityId,
   );
   if (!activity) {
+    state.pendingArchive = null;
+    elements.archiveDialog.close();
     return;
   }
   snapshotBefore("完成活动前");
   state.events = archiveActivity(
     state.events,
     activity.id,
-    "已完成",
+    activity.kind === "schedule" ? "已归档" : "已完成",
   );
+  state.pendingArchive = null;
   state.editing = null;
+  state.restoringActivityId = null;
   persistEvents();
   elements.eventDialog.close();
+  elements.archiveDialog.close();
   state.archiveMode = true;
   state.archiveYear = activity.year;
   state.view = "activity";
   render();
-  showToast("活动已完成并归档");
+  showToast(
+    activity.kind === "schedule"
+      ? "活动已归档"
+      : "活动已完成并归档",
+  );
 }
 
 function renderCategoryManager() {
@@ -3283,9 +3497,9 @@ function renderCategoryManager() {
   elements.categoryList.replaceChildren(fragment);
 }
 
-function openCheckinCalendar(activity) {
+function openCheckinCalendar(activity, date = todayISO()) {
   state.checkinCalendarId = activity.id;
-  const currentMonth = startOfMonth(todayISO());
+  const currentMonth = startOfMonth(date);
   state.checkinMonthCursor =
     currentMonth >= `${activity.year}-01-01` &&
     currentMonth <= `${activity.year}-12-01`
@@ -3712,6 +3926,11 @@ function bindEvents() {
     state.confirmedOverrideDiscard = false;
     elements.eventDialog.close();
   });
+  elements.eventDialog.addEventListener("close", () => {
+    state.editing = null;
+    state.restoringActivityId = null;
+    state.confirmedOverrideDiscard = false;
+  });
   elements.eventForm.addEventListener("submit", handleFormSubmit);
   elements.repeatModeInputs.forEach((input) => {
     input.addEventListener("change", () => {
@@ -3750,6 +3969,26 @@ function bindEvents() {
       })();
     });
   });
+  elements.checkinReminderModeInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      updateCheckinReminderUi();
+      if (!nativeApp || currentCheckinReminderMode() === "none") {
+        return;
+      }
+      void (async () => {
+        const permission = await requestNotificationPermission();
+        if (!permission.granted) {
+          showToast("通知权限未开启，打卡提醒可能无法送达");
+        }
+        if (currentCheckinReminderMode() === "alarm") {
+          const currentExact = await getExactAlarmPermissionState();
+          if (!currentExact.granted) {
+            await requestExactAlarmPermission();
+          }
+        }
+      })();
+    });
+  });
   elements.pauseEventButton.addEventListener(
     "click",
     openPauseConfirmation,
@@ -3759,9 +3998,17 @@ function bindEvents() {
     elements.pauseDialog.close();
   });
   elements.confirmPauseButton.addEventListener("click", confirmPause);
-  elements.completeEventButton.addEventListener(
+  elements.archiveEventButton.addEventListener(
     "click",
-    completeEditingActivity,
+    openArchiveConfirmation,
+  );
+  elements.cancelArchiveButton.addEventListener("click", () => {
+    state.pendingArchive = null;
+    elements.archiveDialog.close();
+  });
+  elements.confirmArchiveButton.addEventListener(
+    "click",
+    confirmArchive,
   );
   elements.cancelOverrideDiscardButton.addEventListener("click", () => {
     state.pendingSeriesEdit = null;

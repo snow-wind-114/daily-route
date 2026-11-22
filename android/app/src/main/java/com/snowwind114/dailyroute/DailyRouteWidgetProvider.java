@@ -19,15 +19,15 @@ public class DailyRouteWidgetProvider extends AppWidgetProvider {
     static final String EXTRA_SERIES_ID = "dailyRouteSeriesId";
     static final String EXTRA_DATE = "dailyRouteDate";
     static final String EXTRA_ORIGINAL_DATE = "dailyRouteOriginalDate";
-    private static final int[] ROW_IDS = {
-        R.id.widget_row_1,
-        R.id.widget_row_2,
-        R.id.widget_row_3,
+    static final String EXTRA_KIND = "dailyRouteKind";
+    private static final int[] SCHEDULE_TEXT_IDS = {
+        R.id.widget_schedule_1,
+        R.id.widget_schedule_2,
+        R.id.widget_schedule_3,
     };
-    private static final int[] ROW_TEXT_IDS = {
-        R.id.widget_row_text_1,
-        R.id.widget_row_text_2,
-        R.id.widget_row_text_3,
+    private static final int[] TODO_TEXT_IDS = {
+        R.id.widget_todo_1,
+        R.id.widget_todo_2,
     };
 
     @Override
@@ -85,21 +85,38 @@ public class DailyRouteWidgetProvider extends AppWidgetProvider {
         String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(
             Calendar.getInstance().getTime()
         );
-        JSONArray events = new JSONArray();
+        JSONArray schedules = new JSONArray();
+        JSONArray todos = new JSONArray();
+        int checkinTotal = 0;
+        int checkinChecked = 0;
 
         if (snapshotText != null) {
             try {
                 JSONObject snapshot = new JSONObject(snapshotText);
-                events = snapshot.optJSONObject("days") == null
-                    ? new JSONArray()
-                    : snapshot
-                        .optJSONObject("days")
-                        .optJSONArray(today);
-                if (events == null) {
-                    events = new JSONArray();
+                JSONObject days = snapshot.optJSONObject("days");
+                Object dayValue = days == null ? null : days.opt(today);
+                if (dayValue instanceof JSONObject) {
+                    JSONObject day = (JSONObject) dayValue;
+                    schedules = day.optJSONArray("schedules");
+                    todos = day.optJSONArray("todos");
+                    if (schedules == null) {
+                        schedules = new JSONArray();
+                    }
+                    if (todos == null) {
+                        todos = new JSONArray();
+                    }
+                    JSONObject checkins = day.optJSONObject("checkins");
+                    if (checkins != null) {
+                        checkinTotal = checkins.optInt("total", 0);
+                        checkinChecked = checkins.optInt("checked", 0);
+                    }
+                } else if (dayValue instanceof JSONArray) {
+                    // v0.4 snapshot: preserve today's schedule list until first sync.
+                    schedules = (JSONArray) dayValue;
                 }
             } catch (Exception ignored) {
-                events = new JSONArray();
+                schedules = new JSONArray();
+                todos = new JSONArray();
             }
         }
 
@@ -109,64 +126,128 @@ public class DailyRouteWidgetProvider extends AppWidgetProvider {
                 Calendar.getInstance().getTime()
             )
         );
-        int shown = Math.min(events.length(), 3);
+        int totalItems =
+            schedules.length() + todos.length() + checkinTotal;
         views.setTextViewText(
             R.id.widget_summary,
             snapshotText == null
-                ? "打开应用同步活动"
-                : events.length() == 0
+                ? "打开应用同步"
+                : totalItems == 0
                     ? "今天没有安排"
-                    : events.length() + " 项安排"
+                    : totalItems + " 项"
         );
 
-        int nowMinutes = Calendar.getInstance().get(Calendar.HOUR_OF_DAY) * 60 +
+        int nowMinutes =
+            Calendar.getInstance().get(Calendar.HOUR_OF_DAY) * 60 +
             Calendar.getInstance().get(Calendar.MINUTE);
-        int nextMarked = 0;
-        for (int index = 0; index < 3; index += 1) {
-            int rowId = ROW_IDS[index];
-            int textId = ROW_TEXT_IDS[index];
-            if (index >= shown) {
-                views.setViewVisibility(rowId, View.GONE);
+        views.setTextViewText(
+            R.id.widget_schedule_label,
+            schedules.length() > 3
+                ? "定期 · +" + (schedules.length() - 3)
+                : "定期"
+        );
+        int scheduleShown = Math.min(schedules.length(), 3);
+        for (int index = 0; index < SCHEDULE_TEXT_IDS.length; index += 1) {
+            int textId = SCHEDULE_TEXT_IDS[index];
+            if (index >= scheduleShown) {
+                views.setTextViewText(textId, index == 0 ? "无定期安排" : "");
+                views.setViewVisibility(textId, View.VISIBLE);
                 continue;
             }
-
-            JSONObject event = events.optJSONObject(index);
+            JSONObject event = schedules.optJSONObject(index);
             if (event == null) {
-                views.setViewVisibility(rowId, View.GONE);
+                views.setTextViewText(textId, "");
                 continue;
             }
-
             String start = event.optString("startTime", "");
-            String end = event.optString("endTime", "");
             String title = event.optString("title", "活动");
             int startMinutes = minutes(start);
-            int endMinutes = minutes(end);
             String marker = "";
-            if (startMinutes <= nowMinutes && nowMinutes < endMinutes) {
+            if (
+                startMinutes <= nowMinutes &&
+                nowMinutes < minutes(event.optString("endTime", ""))
+            ) {
                 marker = "进行中 · ";
-            } else if (nextMarked == 0 && startMinutes >= nowMinutes) {
-                marker = "下一项 · ";
-                nextMarked = 1;
             }
-
-            views.setViewVisibility(rowId, View.VISIBLE);
             views.setTextViewText(
                 textId,
                 marker + start + "  " + title
             );
             views.setOnClickPendingIntent(
-                rowId,
-                rowPendingIntent(context, appWidgetId, index, event, today)
+                textId,
+                rowPendingIntent(
+                    context,
+                    appWidgetId,
+                    index,
+                    event,
+                    today,
+                    "schedule"
+                )
             );
         }
 
-        views.setViewVisibility(
-            R.id.widget_more,
-            events.length() > 3 ? View.VISIBLE : View.GONE
-        );
         views.setTextViewText(
-            R.id.widget_more,
-            events.length() > 3 ? "还有 " + (events.length() - 3) + " 项" : ""
+            R.id.widget_todo_label,
+            todos.length() > 2
+                ? "今日截止 · +" + (todos.length() - 2)
+                : "今日截止"
+        );
+        int todoShown = Math.min(todos.length(), 2);
+        for (int index = 0; index < TODO_TEXT_IDS.length; index += 1) {
+            int textId = TODO_TEXT_IDS[index];
+            if (index >= todoShown) {
+                views.setTextViewText(textId, index == 0 ? "无今日截止" : "");
+                views.setViewVisibility(textId, View.VISIBLE);
+                continue;
+            }
+            JSONObject event = todos.optJSONObject(index);
+            if (event == null) {
+                views.setTextViewText(textId, "");
+                continue;
+            }
+            views.setTextViewText(
+                textId,
+                event.optString("startTime", "") +
+                "  " +
+                event.optString("title", "代办")
+            );
+            views.setOnClickPendingIntent(
+                textId,
+                rowPendingIntent(
+                    context,
+                    appWidgetId,
+                    index + 3,
+                    event,
+                    today,
+                    "todo"
+                )
+            );
+        }
+
+        views.setTextViewText(
+            R.id.widget_checkin_summary,
+            checkinTotal == 0
+                ? "无打卡项目"
+                : checkinTotal +
+                    "项 · 已打卡" +
+                    checkinChecked
+        );
+        JSONObject checkinTarget = new JSONObject();
+        try {
+            checkinTarget.put("seriesId", "checkin-summary");
+        } catch (Exception ignored) {
+            // A synthetic target is optional; root click still opens the app.
+        }
+        views.setOnClickPendingIntent(
+            R.id.widget_checkin_summary,
+            rowPendingIntent(
+                context,
+                appWidgetId,
+                8,
+                checkinTarget,
+                today,
+                "checkinSummary"
+            )
         );
         views.setOnClickPendingIntent(
             R.id.widget_root,
@@ -180,7 +261,8 @@ public class DailyRouteWidgetProvider extends AppWidgetProvider {
         int appWidgetId,
         int rowIndex,
         JSONObject event,
-        String date
+        String date,
+        String kind
     ) {
         Intent intent = new Intent();
         intent.putExtra(EXTRA_SERIES_ID, event.optString("seriesId", ""));
@@ -189,6 +271,7 @@ public class DailyRouteWidgetProvider extends AppWidgetProvider {
             EXTRA_ORIGINAL_DATE,
             event.optString("originalDate", date)
         );
+        intent.putExtra(EXTRA_KIND, kind);
         return launchPendingIntent(
             context,
             appWidgetId * 10 + rowIndex + 1,
@@ -203,7 +286,8 @@ public class DailyRouteWidgetProvider extends AppWidgetProvider {
     ) {
         intent.setClass(context, MainActivity.class);
         intent.setFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP
+            Intent.FLAG_ACTIVITY_NEW_TASK |
+            Intent.FLAG_ACTIVITY_CLEAR_TOP
         );
         return PendingIntent.getActivity(
             context,

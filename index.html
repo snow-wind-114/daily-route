@@ -578,6 +578,41 @@
             打卡项目不设置日期；创建后可在今天页和专属月历中打卡。
           </div>
 
+          <div
+            class="field field-full reminder-field native-only"
+            id="checkinReminderField"
+            hidden
+          >
+            <span class="field-label">打卡提醒</span>
+            <div class="reminder-options" role="radiogroup" aria-label="打卡提醒方式">
+              <label>
+                <input type="radio" name="checkinReminderMode" value="none" checked />
+                <span><strong>不提醒</strong><small>静默</small></span>
+              </label>
+              <label>
+                <input type="radio" name="checkinReminderMode" value="notification" />
+                <span><strong>通知</strong><small>可能延迟</small></span>
+              </label>
+              <label>
+                <input type="radio" name="checkinReminderMode" value="alarm" />
+                <span><strong>闹钟</strong><small>尽量准点</small></span>
+              </label>
+            </div>
+            <label class="reminder-time" id="checkinReminderTimeField">
+              <span>每天</span>
+              <input
+                id="checkinReminderTime"
+                type="time"
+                value="21:00"
+                step="60"
+              />
+              <span>提醒；已打卡当天自动跳过</span>
+            </label>
+            <p class="reminder-status" id="checkinReminderStatusNote">
+              多个相同时间的未打卡项目会合并为一条提醒。
+            </p>
+          </div>
+
           <div class="field field-full" id="editScopeField" hidden>
             <span class="field-label">修改范围</span>
             <div class="segmented-control" role="radiogroup" aria-label="修改范围">
@@ -731,11 +766,11 @@
           </button>
           <button
             class="secondary-button"
-            id="completeEventButton"
+            id="archiveEventButton"
             type="button"
             hidden
           >
-            完成并归档
+            归档活动
           </button>
           <button
             class="danger-button"
@@ -743,7 +778,7 @@
             type="button"
             hidden
           >
-            删除本次及以后
+            删除整个活动
           </button>
           <span class="footer-spacer"></span>
           <button class="secondary-button" id="cancelEventButton" type="button">
@@ -766,6 +801,23 @@
           </button>
           <button class="danger-solid-button" id="confirmDeleteButton" type="button">
             确认删除
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="archiveDialog">
+      <div class="confirm-sheet">
+        <h2 id="archiveDialogTitle">归档活动？</h2>
+        <p id="archiveDialogMessage">
+          归档后整个活动会停止后续安排和提醒，但仍可在归档中恢复。
+        </p>
+        <div class="confirm-actions">
+          <button class="secondary-button" id="cancelArchiveButton" type="button">
+            取消
+          </button>
+          <button class="danger-solid-button" id="confirmArchiveButton" type="button">
+            归档
           </button>
         </div>
       </div>

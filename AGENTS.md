@@ -4,8 +4,8 @@
 
 ## 版本与发布地址
 
-- 当前版本：`v0.4.0`
-- Android：`versionCode=6`、`versionName=0.4.0`
+- 当前版本：`v0.5.0`
+- Android：`versionCode=7`、`versionName=0.5.0`
 - 版本日期：`2026-11-22`
 - 网页：<https://snow-wind-114.github.io/daily-route/>
 - 固定 APK：
@@ -18,7 +18,7 @@
 
 每次提交 GitHub 时，必须在同一提交更新本文件。
 
-- 文档修正、兼容性 bugfix、内部重构：`v0.4.1`、`v0.4.2`……
+- 文档修正、兼容性 bugfix、内部重构：`v0.5.1`、`v0.5.2`……
 - 新增用户可见功能、数据结构或重要交互：`v0.4`、`v0.5`……
 - 正式稳定版或不兼容的数据/URL 变化：`v1.0`、`v2.0`……
 - 每个提交至少更新“当前版本”“版本日期”“最近变更”和“最近验证”。
@@ -27,6 +27,7 @@
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| `v0.5.0` | 2026-11-22 | 打卡提醒、周视图分区、桌面组件三分区、活动生命周期重做、备份 v4 |
 | `v0.4.0` | 2026-11-22 | 自然年视图、定期/代办/打卡、分类与归档、年度迁移、原生活动闹钟排程和 v4 存储迁移 |
 | `v0.3.2` | 2026-11-15 | 增加闹钟通道诊断和通知通道降级；完善组件名称、图标和静态预览 |
 | `v0.3.1` | 2026-11-15 | 修复桌面组件使用 RemoteViews 不允许的 `<View>` 导致主屏加载失败 |
@@ -36,15 +37,17 @@
 
 ### 最近验证
 
-- `node --test`：49 项通过。
+- `node --test`：53 项通过。
 - `node --check` 与统一版本检查：通过。
 - Android `testDebugUnitTest` 与 Java 编译：通过。
-- Android Debug/Release 构建：通过，`versionCode=6`、`versionName=0.4.0`。
+- Android Debug/Release 构建：通过，`versionCode=7`、`versionName=0.5.0`。
 - Release APK：v2 签名通过，证书 SHA-256 仍为 `81af0bc6dad4481ca886befff7e4dd5d87e5fde9e3ec6c7a4fe24a686f91b1ab`。
+- Release APK SHA-256：`D74C62285679B4F46819A99A7D8056A07B57913C2D4866979A693C91FF18CCC2`。
 - Release 权限：INTERNET、VIBRATE、RECEIVE_BOOT_COMPLETED、WAKE_LOCK、POST_NOTIFICATIONS、SCHEDULE_EXACT_ALARM。
 - 无头 Edge 390×844：新增三类活动、打卡、活动分区、代办红字、归档和分类管理均通过，无横向溢出或页面异常。
-- Android 模拟器：已有 v0.3.2 数据覆盖安装 v0.4.0 后账户、登录状态和旧提醒仍在；三类活动表单和原生测试闹钟正常。
-- v0.3.2 → v0.4.0 真机覆盖升级、锁屏活动闹钟和厂商重启恢复仍需真机复测。
+- Android 模拟器：v0.4.0 覆盖安装 v0.5.0 后账户、登录状态、定期活动和旧提醒保留。
+- Android 模拟器：打卡闹钟按每天 21:00 生成计划，系统实际只保留一个系列唤醒；桌面组件三分区正常渲染并响应点击。
+- 浏览器 390×844：定期删除确认框、归档恢复编辑、本周定期/代办/打卡分区均通过。
 
 ## 产品边界
 
@@ -193,7 +196,7 @@ daily-route.storage.v2
 }
 ```
 
-代办使用 `deadlineDate`、`deadlineTime`、`reminderMode`、`reminderDaysBefore`（0–30）和 `completedAt`。打卡使用 `checkInDates`、`pauses` 和 `completedAt`；同一天最多一次。
+代办使用 `deadlineDate`、`deadlineTime`、`reminderMode`、`reminderDaysBefore`（0–30）和 `completedAt`。打卡使用 `checkInDates`、`pauses`、`reminderMode`、`reminderTime` 和 `completedAt`；同一天最多一次，旧数据默认不提醒且 `reminderTime` 为 `21:00`。
 
 约束：
 
@@ -262,11 +265,14 @@ daily-route.storage.v2
 - “只修改这一次”：写 `occurrenceOverrides`。
 - 修改后续系列时，保留仍匹配新发生日期和次数的单次调整；不匹配项必须在界面确认后丢弃。
 
-删除仍表示“删除本次及以后”：
+定期活动界面不再使用“删除本次及以后”：
 
-- 第一次发生：删除整个系列。
-- 中间发生：设置 `endBefore` 并删除边界后的调整。
-- 已结束或暂停系列可从活动栏整体删除。
+- 暂停从某次发生开始，保留剩余次数。
+- 归档立即停止整个系列的后续发生和提醒，并进入归档。
+- 删除永久移除整个活动系列和全部历史。
+- 单次变化只通过“只修改这一次”处理，不提供单次删除。
+- 恢复归档项目时先打开编辑表单；保存合法新日期后才清除归档状态。
+- 编辑弹窗关闭后再排队打开确认框，禁止连续 `close()`/`showModal()` 导致 WebView 丢弃确认框。
 
 ## 代办、打卡、分类与归档
 
@@ -315,6 +321,9 @@ newStart < existingEnd && newEnd > existingStart
 
 - 普通通知使用 `daily-route-notifications-v1` 渠道。
 - 闹钟使用 `daily-route-alarms-v1` 高优先级渠道、独立声音和振动。
+- 每个打卡项目每日最多提醒一次，默认时刻 `21:00`；当天已打卡、暂停或归档时跳过。
+- 相同触发时刻和提醒方式的多个未打卡项目必须合并成一个 `checkinGroup`。
+- 打卡组使用稳定的 `checkin-group:<mode>:<time>` 身份；打卡状态变化后重新同步并取消当天旧计划。
 - 活动闹钟使用 `DailyRouteAlarmSchedulerPlugin`，不再把所有未来发生交给 Capacitor 插件逐个排程。
 - 原生排程器为每个活动系列只保留最近一次 future job；广播触发后从持久化 job 列表安排下一次，避免精确闹钟数量上限。
 - JS 提醒同步必须串行执行，禁止并发“取消全部后重排”导致新排程被旧同步取消。
@@ -335,10 +344,12 @@ newStart < existingEnd && newEnd > existingStart
 
 - 原生类：`DailyRouteWidgetProvider`。
 - JS 原生桥：`DailyRouteWidgetPlugin`。
-- 尺寸：目标 4×2，最多显示今天前 3 项，优先按时间合并定期和代办截止。
+- 尺寸：目标 4×2，左侧最多 3 项今天定期，右上最多 2 项今天截止代办，右下显示打卡项目数与已打卡数。
 - 显示当前项和下一项标记；超过 3 项显示剩余数量。
 - 点击活动打开应用对应有效日期。
-- JS 通过 `native-widget.js` 生成当前年度按日期索引的定期、代办和打卡快照。
+- JS 通过 `native-widget.js` 生成当前年度快照版本 2，按日期保存 `schedules`、`todos`、`checkins`。
+- 组件点击通过 `kind` 区分 `schedule`、`todo`、`checkinSummary`。
+- 原生组件必须继续读取 v0.4 数组快照作为一次性兼容回退。
 - 快照写入应用私有 `SharedPreferences`，组件不得直接读取 WebView `localStorage`。
 - 保存、登录、导入、暂停、恢复、应用恢复和日期变化后刷新。
 - 退出登录或重置账户时清除组件快照。
@@ -350,8 +361,8 @@ newStart < existingEnd && newEnd > existingStart
 ```json
 {
   "format": "daily-route-backup",
-  "version": 3,
-  "appVersion": "0.4.0",
+  "version": 4,
+  "appVersion": "0.5.0",
   "exportedAt": "ISO timestamp",
   "eventCount": 0,
   "yearMigrationCompletedFor": 2026,
@@ -366,8 +377,8 @@ newStart < existingEnd && newEnd > existingStart
 
 规则：
 
-- 新导出使用版本 3。
-- 解析器继续接受版本 1、2、3；旧活动按定期活动读取。
+- 新导出使用版本 4。
+- 解析器继续接受版本 1–4；旧活动按定期活动读取，旧打卡自动补默认提醒字段。
 - 备份包含分类和年度迁移完成年份，不包含登录状态。
 - 备份绝不包含账户名、密码哈希、盐或会话状态。
 - 导入前显示当前/导入数量、提醒数、暂停数和单次调整数。
@@ -414,8 +425,8 @@ newStart < existingEnd && newEnd > existingStart
 ## Android 工程与构建
 
 - 包名：`com.snowwind114.dailyroute`
-- `versionCode`：6
-- `versionName`：0.4.0
+- `versionCode`：7
+- `versionName`：0.5.0
 - JDK：`E:\Android\Android Studio\jbr`
 - SDK：`C:\Users\Administrator\AppData\Local\Android\Sdk`
 - Gradle：8.14.3
@@ -458,16 +469,18 @@ android/keystore.properties
 - 自然年截断、年度复制和代办不迁移规则。
 - 代办提前 0–30 天提醒、逾期和完成归档。
 - 打卡单日去重、历史补打、暂停和归档。
+- 打卡每日提醒默认值、成组规则、已打卡/暂停/归档跳过。
 - 按类型分类、分类删除后的未分类回退。
 - 单次调整移动、原日期跳过和提醒身份稳定。
 - 暂停不消耗次数、恢复周期和暂停不占用。
 - 后续编辑保留匹配调整、丢弃不匹配调整。
 - 旧提醒字段迁移、v2/v3 -> v4 存储迁移。
 - 账户哈希、正确/错误密码和改密。
-- 备份 v1/v2/v3、分类保留、数量校验和敏感字段缺失。
+- 备份 v1–v4、分类保留、打卡提醒保留、数量校验和敏感字段缺失。
 - 恢复点上限、去重和导出时间。
 - 普通通知、原生闹钟 job、并发同步串行化、降级和已过时间跳过。
 - 桌面组件年度快照、代办截止和打卡摘要。
+- 定期永久删除确认、归档恢复编辑和恢复后自动归档保护。
 - 更新清单校验、HTTPS 和版本比较。
 
 手动验证：

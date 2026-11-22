@@ -5,13 +5,13 @@ import {
 } from "./activities.js";
 
 export const BACKUP_FORMAT = "daily-route-backup";
-export const BACKUP_VERSION = 3;
-export const SUPPORTED_BACKUP_VERSIONS = Object.freeze([1, 2, 3]);
+export const BACKUP_VERSION = 4;
+export const SUPPORTED_BACKUP_VERSIONS = Object.freeze([1, 2, 3, 4]);
 
 export function createBackup(
   events,
   {
-    appVersion = "0.4.0",
+    appVersion = "0.5.0",
     categories = emptyCategories(),
     yearMigrationCompletedFor = new Date().getFullYear(),
     now = new Date(),

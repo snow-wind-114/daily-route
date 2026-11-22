@@ -16,6 +16,7 @@ public class DailyRouteWidgetPlugin extends Plugin {
     static final String PENDING_SERIES_KEY = "pending_series_id";
     static final String PENDING_DATE_KEY = "pending_date";
     static final String PENDING_ORIGINAL_DATE_KEY = "pending_original_date";
+    static final String PENDING_KIND_KEY = "pending_kind";
 
     @PluginMethod
     public void setSnapshot(PluginCall call) {
@@ -50,17 +51,20 @@ public class DailyRouteWidgetPlugin extends Plugin {
         String seriesId = prefs.getString(PENDING_SERIES_KEY, null);
         String date = prefs.getString(PENDING_DATE_KEY, null);
         String originalDate = prefs.getString(PENDING_ORIGINAL_DATE_KEY, null);
+        String kind = prefs.getString(PENDING_KIND_KEY, "schedule");
         JSObject result = new JSObject();
 
         if (seriesId != null && date != null) {
             result.put("seriesId", seriesId);
             result.put("date", date);
             result.put("originalDate", originalDate == null ? date : originalDate);
+            result.put("kind", kind);
             prefs
                 .edit()
                 .remove(PENDING_SERIES_KEY)
                 .remove(PENDING_DATE_KEY)
                 .remove(PENDING_ORIGINAL_DATE_KEY)
+                .remove(PENDING_KIND_KEY)
                 .apply();
         }
         call.resolve(result);
@@ -88,6 +92,7 @@ public class DailyRouteWidgetPlugin extends Plugin {
         String originalDate = intent.getStringExtra(
             DailyRouteWidgetProvider.EXTRA_ORIGINAL_DATE
         );
+        String kind = intent.getStringExtra(DailyRouteWidgetProvider.EXTRA_KIND);
         if (seriesId == null || date == null) {
             return null;
         }
@@ -97,14 +102,17 @@ public class DailyRouteWidgetPlugin extends Plugin {
             .putString(PENDING_SERIES_KEY, seriesId)
             .putString(PENDING_DATE_KEY, date)
             .putString(PENDING_ORIGINAL_DATE_KEY, originalDate)
+            .putString(PENDING_KIND_KEY, kind == null ? "schedule" : kind)
             .apply();
         intent.removeExtra(DailyRouteWidgetProvider.EXTRA_SERIES_ID);
         intent.removeExtra(DailyRouteWidgetProvider.EXTRA_DATE);
         intent.removeExtra(DailyRouteWidgetProvider.EXTRA_ORIGINAL_DATE);
+        intent.removeExtra(DailyRouteWidgetProvider.EXTRA_KIND);
         JSObject result = new JSObject();
         result.put("seriesId", seriesId);
         result.put("date", date);
         result.put("originalDate", originalDate == null ? date : originalDate);
+        result.put("kind", kind == null ? "schedule" : kind);
         return result;
     }
 

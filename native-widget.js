@@ -1,10 +1,11 @@
+import {
+  activeCheckinsForDate,
+  isCheckedIn,
+  todosDueOnDate,
+} from "./activities.js";
 import { addDays, getScheduleWindow, todayISO } from "./date-utils.js";
 import { isNativeApp } from "./notifications.js";
 import { occurrencesBetween } from "./schedule.js";
-import {
-  activeCheckinsForDate,
-  todosDueOnDate,
-} from "./activities.js";
 
 function getWidgetPlugin() {
   return isNativeApp()
@@ -17,79 +18,58 @@ export function buildWidgetSnapshot(
   { startDate = todayISO(), endDate = getScheduleWindow(startDate).endDate } = {},
 ) {
   const days = {};
-  for (const occurrence of occurrencesBetween(events, startDate, endDate)) {
-    const items = days[occurrence.date] ?? [];
-    items.push({
-      kind: "schedule",
-      seriesId: occurrence.series.id,
-      originalDate: occurrence.originalDate,
-      title: occurrence.series.title,
-      startTime: occurrence.series.startTime,
-      endTime: occurrence.series.endTime,
-      reminderMode: occurrence.series.reminderMode,
-    });
-    days[occurrence.date] = items;
-  }
+  for (let date = startDate; date <= endDate; date = addDays(date, 1)) {
+    const schedules = occurrencesBetween(events, date, date).map(
+      (occurrence) => ({
+        kind: "schedule",
+        seriesId: occurrence.series.id,
+        originalDate: occurrence.originalDate,
+        title: occurrence.series.title,
+        startTime: occurrence.series.startTime,
+        endTime: occurrence.series.endTime,
+        reminderMode: occurrence.series.reminderMode,
+      }),
+    );
+    schedules.sort((left, right) =>
+      left.startTime.localeCompare(right.startTime),
+    );
 
-  for (const activity of events) {
-    if (activity.kind !== "todo") {
-      continue;
-    }
-    for (let date = startDate; date <= endDate; date = addDays(date, 1)) {
-      if (todosDueOnDate([activity], date).length === 0) {
-        if (date === endDate) {
-          break;
-        }
-        continue;
-      }
-      const items = days[date] ?? [];
-      items.push({
+    const todos = todosDueOnDate(events, date)
+      .sort((left, right) =>
+        left.deadlineTime.localeCompare(right.deadlineTime),
+      )
+      .map((activity) => ({
         kind: "todo",
         seriesId: activity.id,
         originalDate: date,
-        title: `截止：${activity.title}`,
+        title: activity.title,
         startTime: activity.deadlineTime,
         endTime: activity.deadlineTime,
         reminderMode: activity.reminderMode,
-      });
-      days[date] = items;
-      break;
-    }
-  }
-
-  for (let date = startDate; date <= endDate; date = addDays(date, 1)) {
+      }));
     const checkins = activeCheckinsForDate(events, date);
-    if (checkins.length === 0) {
-      if (date === endDate) {
-        break;
-      }
-      continue;
-    }
-    const items = days[date] ?? [];
-    items.push({
-      kind: "checkin",
-      seriesId: checkins[0].id,
-      originalDate: date,
-      title:
-        checkins.length === 1
-          ? `打卡：${checkins[0].title}`
-          : `${checkins.length} 项打卡`,
-      startTime: "",
-      endTime: "",
-      reminderMode: "none",
-    });
-    days[date] = items;
-  }
+    const checked = checkins.filter((activity) =>
+      isCheckedIn(activity, date),
+    ).length;
 
-  for (const items of Object.values(days)) {
-    items.sort((left, right) =>
-      (left.startTime || "99:99").localeCompare(
-        right.startTime || "99:99",
-      ),
-    );
+    if (
+      schedules.length > 0 ||
+      todos.length > 0 ||
+      checkins.length > 0
+    ) {
+      days[date] = {
+        schedules,
+        todos,
+        checkins: {
+          total: checkins.length,
+          checked,
+        },
+      };
+    }
   }
 
   return {
+    version: 2,
     generatedAt: new Date().toISOString(),
     startDate,
     endDate,
@@ -123,13 +103,14 @@ export async function consumeWidgetLaunch() {
     return null;
   }
   const result = await plugin.consumePendingOpen();
-  if (!result?.seriesId || !result?.date) {
+  if (!result?.kind) {
     return null;
   }
   return {
-    seriesId: result.seriesId,
-    date: result.date,
-    originalDate: result.originalDate || result.date,
+    seriesId: result.seriesId || "",
+    date: result.date || todayISO(),
+    originalDate: result.originalDate || result.date || todayISO(),
+    kind: result.kind,
   };
 }
 
@@ -139,11 +120,12 @@ export async function registerWidgetLaunchListener(callback) {
     return () => {};
   }
   const listener = await plugin.addListener("widgetOpen", (event) => {
-    if (event?.seriesId && event?.date) {
+    if (event?.kind) {
       callback({
-        seriesId: event.seriesId,
-        date: event.date,
-        originalDate: event.originalDate || event.date,
+        seriesId: event.seriesId || "",
+        date: event.date || todayISO(),
+        originalDate: event.originalDate || event.date || todayISO(),
+        kind: event.kind,
       });
     }
   });

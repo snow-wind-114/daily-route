@@ -22,6 +22,7 @@ export const ACTIVITY_KIND_LABELS = Object.freeze({
   checkin: "打卡",
 });
 export const TODO_MAX_REMINDER_DAYS = 30;
+export const DEFAULT_CHECKIN_REMINDER_TIME = "21:00";
 
 function validYear(value) {
   const year = Number(value);
@@ -47,6 +48,12 @@ function archiveFields(raw) {
 
 function normalizeReminderMode(raw) {
   return ["none", "notification", "alarm"].includes(raw) ? raw : "none";
+}
+
+function normalizeReminderTime(raw) {
+  return timeToMinutes(raw) === null
+    ? DEFAULT_CHECKIN_REMINDER_TIME
+    : raw;
 }
 
 function normalizeCheckInDates(rawDates) {
@@ -127,6 +134,8 @@ export function normalizeCheckin(raw) {
     year: validYear(raw.year) ?? new Date().getFullYear(),
     checkInDates: normalizeCheckInDates(raw.checkInDates),
     pauses: normalizePauses(raw.pauses),
+    reminderMode: normalizeReminderMode(raw.reminderMode),
+    reminderTime: normalizeReminderTime(raw.reminderTime),
     completedAt,
     ...archiveFields(raw),
     createdAt:
@@ -512,6 +521,20 @@ export function validateTodoInput(
   return null;
 }
 
+export function validateCheckinInput(input) {
+  const title = cleanText(input.title, 80);
+  if (!title) {
+    return "请填写打卡名称";
+  }
+  if (!["none", "notification", "alarm"].includes(input.reminderMode)) {
+    return "提醒方式无效";
+  }
+  if (timeToMinutes(input.reminderTime) === null) {
+    return "请选择有效的打卡提醒时间";
+  }
+  return null;
+}
+
 export function todoFromInput(input, { id, createdAt, categoryId } = {}) {
   const now = new Date().toISOString();
   return normalizeTodo({
@@ -541,6 +564,8 @@ export function checkinFromInput(
     year,
     checkInDates: input.checkInDates ?? [],
     pauses: input.pauses ?? [],
+    reminderMode: input.reminderMode,
+    reminderTime: input.reminderTime,
     createdAt: createdAt ?? now,
     updatedAt: now,
   });
@@ -572,6 +597,10 @@ export function cloneActivityForYear(activity, targetYear, overrides = {}) {
       {
         title: overrides.title ?? activity.title,
         notes: overrides.notes ?? activity.notes,
+        reminderMode:
+          overrides.reminderMode ?? activity.reminderMode,
+        reminderTime:
+          overrides.reminderTime ?? activity.reminderTime,
       },
       {
         year: targetYear,

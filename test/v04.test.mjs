@@ -22,6 +22,7 @@ import {
 } from "../app-state.js";
 import { createLocalAccount } from "../account.js";
 import { createBackup, parseBackup } from "../backup.js";
+import { buildWidgetSnapshot } from "../native-widget.js";
 import {
   buildReminderPlan,
   syncScheduledNotifications,
@@ -147,6 +148,15 @@ test("check-in allows one toggle per date and prevents future or paused dates", 
   );
 });
 
+test("legacy and new check-ins default to no reminder at 21:00", () => {
+  const activity = checkinFromInput(
+    { title: "阅读", notes: "", checkInDates: [] },
+    { year: 2026 },
+  );
+  assert.equal(activity.reminderMode, "none");
+  assert.equal(activity.reminderTime, "21:00");
+});
+
 test("categories are isolated by kind and deleting one leaves activities intact", () => {
   let categories = normalizeCategories(null);
   categories = addCategory(categories, "schedule", "课程");
@@ -174,6 +184,19 @@ test("completed todo archives and retains its backup metadata", () => {
   assert.ok(archived.archivedAt);
   assert.ok(archived.completedAt);
   assert.equal(archived.archiveReason, "已完成");
+});
+
+test("archiving a regular series removes all future occurrences", () => {
+  const activity = schedule({ repeatCount: null });
+  const archived = archiveActivity(
+    [activity],
+    activity.id,
+    "已归档",
+  )[0];
+  assert.deepEqual(
+    occurrencesBetween([archived], "2026-12-28", "2026-12-31"),
+    [],
+  );
 });
 
 test("native v3 storage upgrades to v4 with categories and activity kinds", async () => {
@@ -204,7 +227,7 @@ test("native v3 storage upgrades to v4 with categories and activity kinds", asyn
   assert.ok(storage.getItem(NATIVE_STORAGE_KEY));
 });
 
-test("backup v3 includes categories and mixed kinds without account secrets", () => {
+test("backup v4 includes categories and mixed kinds without account secrets", () => {
   const categories = normalizeCategories({
     schedule: [{ id: "cat", name: "课程" }],
   });
@@ -215,7 +238,7 @@ test("backup v3 includes categories and mixed kinds without account secrets", ()
   });
   const text = JSON.stringify(backup);
   const parsed = parseBackup(text);
-  assert.equal(parsed.version, 3);
+  assert.equal(parsed.version, 4);
   assert.equal(parsed.events.length, 2);
   assert.equal(parsed.categories.schedule[0].name, "课程");
   assert.equal(text.includes("passwordHash"), false);
@@ -224,7 +247,13 @@ test("backup v3 includes categories and mixed kinds without account secrets", ()
 test("year migration clones regular and check-in projects but not todos", () => {
   const regular = schedule({ categoryId: "cat" });
   const reading = checkinFromInput(
-    { title: "阅读", notes: "", checkInDates: ["2026-12-01"] },
+    {
+      title: "阅读",
+      notes: "",
+      checkInDates: ["2026-12-01"],
+      reminderMode: "alarm",
+      reminderTime: "20:30",
+    },
     { year: 2026, categoryId: "cat" },
   );
   assert.equal(cloneActivityForYear(todo(), 2027), null);
@@ -235,21 +264,128 @@ test("year migration clones regular and check-in projects but not todos", () => 
   assert.equal(nextRegular.categoryId, "cat");
   assert.equal(nextReading.year, 2027);
   assert.deepEqual(nextReading.checkInDates, []);
+  assert.equal(nextReading.reminderMode, "alarm");
+  assert.equal(nextReading.reminderTime, "20:30");
 });
 
-test("reminder plan includes todo alarms and check-in does not create reminders", () => {
+test("check-in reminders group by identical time and mode", () => {
   const reading = checkinFromInput(
-    { title: "阅读", notes: "", checkInDates: [] },
+    {
+      title: "阅读",
+      notes: "",
+      checkInDates: [],
+      reminderMode: "notification",
+      reminderTime: "21:00",
+    },
     { year: 2026 },
   );
-  const plan = buildReminderPlan([todo(), reading], {
+  const exercise = checkinFromInput(
+    {
+      title: "运动",
+      notes: "",
+      checkInDates: [],
+      reminderMode: "notification",
+      reminderTime: "21:00",
+    },
+    { year: 2026 },
+  );
+  const plan = buildReminderPlan([todo(), reading, exercise], {
     startDate: "2026-12-01",
-    endDate: "2026-12-31",
+    endDate: "2026-12-01",
     now: new Date(2026, 11, 1, 0, 0),
   });
-  assert.equal(plan.length, 1);
-  assert.equal(plan[0].kind, "todo");
-  assert.equal(plan[0].mode, "alarm");
+  const group = plan.find((item) => item.kind === "checkinGroup");
+  assert.equal(group.titles.length, 2);
+  assert.deepEqual(group.titles, ["阅读", "运动"]);
+});
+
+test("check-in reminders skip checked, paused, archived and different modes", () => {
+  const base = checkinFromInput(
+    {
+      title: "阅读",
+      notes: "",
+      checkInDates: ["2026-12-01"],
+      reminderMode: "notification",
+      reminderTime: "21:00",
+    },
+    { year: 2026 },
+  );
+  const paused = pauseCheckin(
+    checkinFromInput(
+      {
+        title: "运动",
+        notes: "",
+        checkInDates: [],
+        reminderMode: "notification",
+        reminderTime: "21:00",
+      },
+      { year: 2026 },
+    ),
+    "2026-12-01",
+  );
+  const archivedSource = checkinFromInput(
+      {
+        title: "写作",
+        notes: "",
+        checkInDates: [],
+        reminderMode: "notification",
+        reminderTime: "21:00",
+      },
+      { year: 2026 },
+    );
+  const archived = archiveActivity(
+    [archivedSource],
+    archivedSource.id,
+    "已完成",
+  )[0];
+  const alarm = checkinFromInput(
+    {
+      title: "复习",
+      notes: "",
+      checkInDates: [],
+      reminderMode: "alarm",
+      reminderTime: "21:00",
+    },
+    { year: 2026 },
+  );
+  const plan = buildReminderPlan([base, paused, archived, alarm], {
+    startDate: "2026-12-01",
+    endDate: "2026-12-01",
+    now: new Date(2026, 11, 1, 0, 0),
+  });
+  const checkinPlans = plan.filter(
+    (item) => item.kind === "checkinGroup",
+  );
+  assert.equal(checkinPlans.length, 1);
+  assert.equal(checkinPlans[0].mode, "alarm");
+  assert.deepEqual(checkinPlans[0].titles, ["复习"]);
+});
+
+test("widget snapshot separates today's schedules, todos and check-in summary", () => {
+  const regular = schedule({
+    date: "2026-12-01",
+    repeatCount: 1,
+  });
+  const report = todo({ deadlineDate: "2026-12-01" });
+  const reading = checkinFromInput(
+    {
+      title: "阅读",
+      notes: "",
+      checkInDates: ["2026-12-01"],
+      reminderMode: "notification",
+      reminderTime: "21:00",
+    },
+    { year: 2026 },
+  );
+  const snapshot = buildWidgetSnapshot([regular, report, reading], {
+    startDate: "2026-12-01",
+    endDate: "2026-12-01",
+  });
+  const day = snapshot.days["2026-12-01"];
+  assert.equal(snapshot.version, 2);
+  assert.equal(day.schedules[0].title, "课程");
+  assert.equal(day.todos[0].title, "提交报告");
+  assert.deepEqual(day.checkins, { total: 1, checked: 1 });
 });
 
 test("notification synchronization is serialized across concurrent refreshes", async () => {
