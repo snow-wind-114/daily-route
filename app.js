@@ -42,7 +42,6 @@ import {
   categoryName,
   checkinFromInput,
   checkinDatesBetween,
-  cloneActivityForYear,
   deleteCategory,
   finalizePreviousYears,
   isActivityArchived,
@@ -116,10 +115,11 @@ import {
   buildReviewActivitySnapshot,
   buildReviewMarkdown,
   createReviewEntry,
-  hasReviewContent,
   normalizeReviewEntries,
   normalizeReviewReminder,
   removeReviewsBeforeYear,
+  reviewEntriesInRange,
+  reviewRangeFor,
 } from "./review.js";
 import { checkForUpdate } from "./update-check.js";
 import {
@@ -128,9 +128,15 @@ import {
   registerWidgetLaunchListener,
   syncNativeWidgetSnapshot,
 } from "./native-widget.js";
+import {
+  buildMigrationCopies,
+  migrationCandidates,
+  migrationIsDue as migrationWindowIsDue,
+  migrationTargetYear as getMigrationTargetYear,
+} from "./year-migration.js";
 
-const APP_VERSION = "0.5.1";
-const APP_VERSION_CODE = 8;
+const APP_VERSION = "0.5.2";
+const APP_VERSION_CODE = 9;
 const SLOT_HEIGHT = 44;
 const PIXELS_PER_MINUTE = SLOT_HEIGHT / 30;
 const nativeApp = isNativeApp();
@@ -171,6 +177,9 @@ const elements = {
   nextDayButton: document.querySelector("#nextDayButton"),
   goTodayButton: document.querySelector("#goTodayButton"),
   dayEmpty: document.querySelector("#dayEmpty"),
+  dayReviewEntry: document.querySelector("#dayReviewEntry"),
+  dayReviewEntryTitle: document.querySelector("#dayReviewEntryTitle"),
+  dayReviewEntryDetail: document.querySelector("#dayReviewEntryDetail"),
   dayShortcuts: document.querySelector("#dayShortcuts"),
   emptyAddButton: document.querySelector("#emptyAddButton"),
   timelineScroll: document.querySelector("#timelineScroll"),
@@ -212,7 +221,6 @@ const elements = {
   androidDownloadButton: document.querySelector("#androidDownloadButton"),
   webExportButton: document.querySelector("#webExportButton"),
   accountButton: document.querySelector("#accountButton"),
-  addTopButton: document.querySelector("#addTopButton"),
   addFab: document.querySelector("#addFab"),
   eventDialog: document.querySelector("#eventDialog"),
   eventForm: document.querySelector("#eventForm"),
@@ -370,6 +378,13 @@ const elements = {
   reviewArchiveBanner: document.querySelector("#reviewArchiveBanner"),
   reviewArchiveMessage: document.querySelector("#reviewArchiveMessage"),
   openReviewArchiveButton: document.querySelector("#openReviewArchiveButton"),
+  openReviewExportButton: document.querySelector("#openReviewExportButton"),
+  reviewDecemberExportBanner: document.querySelector(
+    "#reviewDecemberExportBanner",
+  ),
+  exportCurrentYearReviewButton: document.querySelector(
+    "#exportCurrentYearReviewButton",
+  ),
   reviewActivitySummary: document.querySelector("#reviewActivitySummary"),
   reviewScheduleList: document.querySelector("#reviewScheduleList"),
   reviewTodoList: document.querySelector("#reviewTodoList"),
@@ -396,9 +411,6 @@ const elements = {
   discardReviewArchiveButton: document.querySelector(
     "#discardReviewArchiveButton",
   ),
-  deferReviewArchiveButton: document.querySelector(
-    "#deferReviewArchiveButton",
-  ),
   reviewArchiveConfirm: document.querySelector("#reviewArchiveConfirm"),
   reviewArchiveConfirmMessage: document.querySelector(
     "#reviewArchiveConfirmMessage",
@@ -422,6 +434,21 @@ const elements = {
   migrationError: document.querySelector("#migrationError"),
   skipMigrationButton: document.querySelector("#skipMigrationButton"),
   confirmMigrationButton: document.querySelector("#confirmMigrationButton"),
+  exportMigrationReviewButton: document.querySelector(
+    "#exportMigrationReviewButton",
+  ),
+  reviewExportDialog: document.querySelector("#reviewExportDialog"),
+  closeReviewExportDialog: document.querySelector("#closeReviewExportDialog"),
+  reviewExportAnchor: document.querySelector("#reviewExportAnchor"),
+  reviewExportScopeInputs: document.querySelectorAll(
+    'input[name="reviewExportScope"]',
+  ),
+  reviewExportWeekRange: document.querySelector("#reviewExportWeekRange"),
+  reviewExportMonthRange: document.querySelector("#reviewExportMonthRange"),
+  reviewExportYearRange: document.querySelector("#reviewExportYearRange"),
+  reviewExportCount: document.querySelector("#reviewExportCount"),
+  cancelReviewExportButton: document.querySelector("#cancelReviewExportButton"),
+  confirmReviewExportButton: document.querySelector("#confirmReviewExportButton"),
 };
 
 const initialData = loadInitialData();
@@ -466,6 +493,7 @@ const state = {
   reviewLoadedDate: null,
   pendingReviewNavigation: null,
   pendingReviewArchiveMode: null,
+  reviewExportScope: "week",
   migrationSelections: new Map(),
 };
 
@@ -664,6 +692,12 @@ async function refreshNativeNotifications() {
           state.yearMigrationCompletedFor,
         )}-12-31`,
         reviewReminder: state.reviewReminder,
+        migrationReminder: {
+          enabled:
+            state.yearMigrationCompletedFor <
+            Number(todayISO().slice(0, 4)) + 1,
+          targetYear: Number(todayISO().slice(0, 4)) + 1,
+        },
       });
   } catch (error) {
     console.error("同步活动提醒失败", error);
@@ -860,6 +894,15 @@ function handleNotificationAction({
   effectiveDate,
   activityKind,
 }) {
+  if (activityKind === "yearMigration") {
+    state.view = "activity";
+    state.archiveMode = false;
+    render();
+    if (migrationIsDue()) {
+      openMigrationDialog();
+    }
+    return;
+  }
   if (activityKind === "dailyReview") {
     state.reviewDate = todayISO();
     state.reviewLoadedDate = null;
@@ -1484,7 +1527,6 @@ function render(options = {}) {
   const hideAddActions = state.view === "review";
   elements.addFab.hidden =
     hideAddActions || (nativeApp && !state.authenticated);
-  elements.addTopButton.hidden = hideAddActions;
 
   if (state.view === "day") {
     renderDay(window, options);
@@ -1522,6 +1564,17 @@ function renderDay(window, options = {}) {
     state.selectedDate <= window.startDate;
   elements.nextDayButton.disabled = state.selectedDate >= window.endDate;
   elements.goTodayButton.disabled = isToday;
+  const canOpenReview = state.selectedDate <= today;
+  const reviewEntry = reviewEntryForDate(state.selectedDate);
+  elements.dayReviewEntry.hidden = !canOpenReview;
+  elements.dayReviewEntryTitle.textContent = isToday
+    ? "查看今日回顾"
+    : "查看当天回顾";
+  elements.dayReviewEntryDetail.textContent = reviewEntry
+    ? "已有当天的总结、感想或灵感"
+    : isToday
+      ? "写总结、感想和灵感"
+      : "当天没有保存回顾";
   elements.dayEmpty.hidden =
     occurrences.length > 0 ||
     shortcutCount.todo > 0 ||
@@ -2301,6 +2354,8 @@ function renderReview() {
   elements.reviewReminderStatus.textContent = state.reviewReminder.enabled
     ? `已开启，每天 ${state.reviewReminder.time} 提醒。`
     : "提醒默认关闭，开启后会请求通知权限。";
+  elements.reviewDecemberExportBanner.hidden =
+    new Date().getMonth() !== 11;
 
   const archivedEntries = state.reviewEntries.filter(
     (item) => Number(item.date.slice(0, 4)) < currentYear,
@@ -2378,6 +2433,111 @@ function requestReviewLeave(callback) {
   }
   state.pendingReviewNavigation = callback;
   elements.unsavedReviewDialog.showModal();
+}
+
+function reviewExportInfo(scope, date) {
+  const range = reviewRangeFor(scope, date);
+  const entries = reviewEntriesInRange(
+    state.reviewEntries,
+    range.startDate,
+    range.endDate,
+  );
+  const label =
+    scope === "week"
+      ? `${formatShortDate(range.startDate)}–${formatShortDate(range.endDate)}`
+      : scope === "month"
+        ? formatMonthTitle(range.startDate)
+        : `${range.startDate.slice(0, 4)}年`;
+  const filename =
+    scope === "week"
+      ? `daily-route-review-${range.startDate}-${range.endDate}.md`
+      : scope === "month"
+        ? `daily-route-review-${range.startDate.slice(0, 7)}.md`
+        : `daily-route-review-${range.startDate.slice(0, 4)}.md`;
+  return {
+    ...range,
+    label,
+    entries,
+    filename,
+    title: `Daily Route 回顾 · ${label}`,
+  };
+}
+
+function currentReviewExportScope() {
+  return (
+    [...elements.reviewExportScopeInputs].find((input) => input.checked)
+      ?.value ?? "week"
+  );
+}
+
+function refreshReviewExportDialog() {
+  const info = reviewExportInfo(state.reviewExportScope, state.reviewDate);
+  const week = reviewExportInfo("week", state.reviewDate);
+  const month = reviewExportInfo("month", state.reviewDate);
+  const year = reviewExportInfo("year", state.reviewDate);
+  elements.reviewExportAnchor.textContent =
+    `以 ${formatDayTitle(state.reviewDate)} 为基准，仅导出已经保存的回顾。`;
+  elements.reviewExportWeekRange.textContent =
+    `${week.startDate} 至 ${week.endDate}`;
+  elements.reviewExportMonthRange.textContent =
+    `${month.startDate} 至 ${month.endDate}`;
+  elements.reviewExportYearRange.textContent =
+    `${year.startDate} 至 ${year.endDate}`;
+  elements.reviewExportCount.textContent =
+    info.entries.length === 0
+      ? "所选范围没有已保存的回顾。"
+      : `所选范围有 ${info.entries.length} 天回顾可导出。`;
+  elements.confirmReviewExportButton.disabled = info.entries.length === 0;
+}
+
+function openReviewExportDialog(scope = "week") {
+  state.reviewExportScope = scope;
+  for (const input of elements.reviewExportScopeInputs) {
+    input.checked = input.value === scope;
+  }
+  refreshReviewExportDialog();
+  elements.reviewExportDialog.showModal();
+}
+
+async function exportSelectedReviewRange() {
+  const info = reviewExportInfo(
+    state.reviewExportScope,
+    state.reviewDate,
+  );
+  if (info.entries.length === 0) {
+    showToast("所选范围没有已保存的回顾");
+    return;
+  }
+  const contents = buildReviewMarkdown(info.entries, {
+    startDate: info.startDate,
+    endDate: info.endDate,
+    title: info.title,
+  });
+  elements.confirmReviewExportButton.disabled = true;
+  try {
+    if (nativeApp) {
+      const shared = await shareNativeTextFile(info.filename, contents, {
+        title: "Daily Route 回顾册",
+        text: info.title,
+        dialogTitle: "导出回顾册",
+      });
+      if (!shared) {
+        throw new Error("当前设备无法打开系统分享面板");
+      }
+    } else {
+      downloadTextFile(
+        info.filename,
+        contents,
+        "text/markdown;charset=utf-8",
+      );
+    }
+    elements.reviewExportDialog.close();
+    showToast("回顾册已导出");
+  } catch (error) {
+    showToast(error.message || "导出回顾册失败");
+  } finally {
+    elements.confirmReviewExportButton.disabled = false;
+  }
 }
 
 function describeOccupiedSlots(slots) {
@@ -2608,7 +2768,7 @@ function renderActivities(window) {
     title.textContent = query ? "没有找到相关活动" : "还没有活动项目";
     detail.textContent = query
       ? "换一个名称或分类试试"
-      : "点击右上角按钮添加";
+      : "点击右下角“+”添加";
   }
   renderMigrationBanner();
 }
@@ -2943,7 +3103,7 @@ function openReviewArchiveDialog() {
   state.pendingReviewArchiveMode = null;
   elements.reviewArchiveDialogMessage.textContent =
     `${years.join("、")} 年共有 ${entries.length} 天回顾。` +
-    "请先导出回顾册，或明确放弃后再清除。";
+    "跨年清理已经开始，请导出回顾册，或明确放弃后清除。";
   elements.reviewArchiveConfirm.hidden = true;
   elements.exportReviewArchiveButton.disabled = false;
   elements.reviewArchiveDialog.showModal();
@@ -3038,26 +3198,14 @@ function confirmReviewArchiveClear() {
   );
 }
 
-function deferReviewArchive() {
-  state.pendingReviewArchiveMode = null;
-  elements.reviewArchiveDialog.close();
-}
-
 function migrationTargetYear(now = new Date()) {
-  const month = now.getMonth() + 1;
-  return month === 12 ? now.getFullYear() + 1 : now.getFullYear();
+  return getMigrationTargetYear(now);
 }
 
 function migrationIsDue(now = new Date()) {
-  if (!nativeApp) {
-    return false;
-  }
-  const current = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const target = migrationTargetYear(now);
   return (
-    state.yearMigrationCompletedFor < target &&
-    (month === 12 || month === 1)
+    nativeApp &&
+    migrationWindowIsDue(state.yearMigrationCompletedFor, now)
   );
 }
 
@@ -3072,8 +3220,8 @@ function renderMigrationBanner() {
   elements.yearMigrationTitle.textContent = `${target}年度迁移`;
   elements.yearMigrationMessage.textContent =
     now.getMonth() === 11
-      ? "现在可以先选择要续用到下一年的定期和打卡项目。"
-      : "新年度尚未完成迁移；可继续选择要沿用的项目。";
+      ? `请选择要保留到 ${target} 年的定期和打卡项目，并导出今年回顾。`
+      : "新年度尚未完成迁移；现在可补选要沿用的项目。";
 }
 
 function createListEmpty(message) {
@@ -4125,17 +4273,12 @@ function migrationIsMandatory(now = new Date()) {
 function openMigrationDialog() {
   const targetYear = migrationTargetYear();
   state.migrationSelections = new Map();
-  for (const activity of state.events) {
-    if (
-      (!isActivityArchived(activity) ||
-        activity.archiveReason === "年度结束") &&
-      !isActivityPaused(activity) &&
-      ["schedule", "checkin"].includes(activity.kind)
-    ) {
-      state.migrationSelections.set(activity.id, true);
-    }
+  for (const activity of migrationCandidates(state.events, targetYear)) {
+    state.migrationSelections.set(activity.id, true);
   }
   elements.migrationDialogTitle.textContent = `${targetYear}年度迁移`;
+  elements.confirmMigrationButton.textContent =
+    `保存到 ${targetYear} 年`;
   elements.skipMigrationButton.textContent = migrationIsMandatory()
     ? "明确跳过本年迁移"
     : "稍后处理";
@@ -4146,13 +4289,8 @@ function openMigrationDialog() {
 
 function renderMigrationRows() {
   const fragment = document.createDocumentFragment();
-  const candidates = state.events.filter(
-    (activity) =>
-      (!isActivityArchived(activity) ||
-        activity.archiveReason === "年度结束") &&
-      !isActivityPaused(activity) &&
-      ["schedule", "checkin"].includes(activity.kind),
-  );
+  const targetYear = migrationTargetYear();
+  const candidates = migrationCandidates(state.events, targetYear);
   if (candidates.length === 0) {
     fragment.append(
       createListEmpty("没有可迁移的定期或打卡项目"),
@@ -4174,8 +4312,10 @@ function renderMigrationRows() {
     title.textContent = activity.title;
     detail.textContent =
       activity.kind === "schedule"
-        ? `${formatRecurrenceRule(activity)} · ${activity.startTime}–${activity.endTime}`
-        : `打卡项目 · 今年 ${activity.checkInDates.length} 次`;
+        ? `${isActivityPaused(activity) ? "已暂停 · " : ""}` +
+          `${formatRecurrenceRule(activity)} · ${activity.startTime}–${activity.endTime}`
+        : `打卡项目 · 今年 ${activity.checkInDates.length} 次` +
+          (isActivityPaused(activity) ? " · 已暂停" : "");
     copy.append(title, detail);
     edit.type = "button";
     edit.className = "activity-resume";
@@ -4220,27 +4360,29 @@ function finishMigration(targetYear) {
 function skipMigration() {
   const targetYear = migrationTargetYear();
   const mandatory = migrationIsMandatory();
-  finishMigration(targetYear);
+  if (mandatory) {
+    finishMigration(targetYear);
+  } else {
+    elements.migrationDialog.close();
+  }
   showToast(
     mandatory
       ? `已跳过 ${targetYear} 年度迁移`
-      : "已记录，今年稍后可继续迁移",
+      : "已收起迁移提示，可稍后继续",
   );
 }
 
 function confirmMigration() {
   const targetYear = migrationTargetYear();
-  const selected = state.events.filter(
-    (activity) => state.migrationSelections.get(activity.id) === true,
+  const selectedIds = [...state.migrationSelections.entries()]
+    .filter(([, selected]) => selected)
+    .map(([id]) => id);
+  const copies = buildMigrationCopies(
+    state.events,
+    selectedIds,
+    targetYear,
   );
-  const copies = [];
-  for (const activity of selected) {
-    const copy = cloneActivityForYear(activity, targetYear);
-    if (copy) {
-      copies.push(copy);
-    }
-  }
-  if (copies.length === 0 && selected.length > 0) {
+  if (copies.length === 0 && selectedIds.length > 0) {
     elements.migrationError.textContent = "没有可迁移的活动";
     elements.migrationError.hidden = false;
     return;
@@ -4437,6 +4579,28 @@ function bindEvents() {
     "click",
     openReviewArchiveDialog,
   );
+  elements.openReviewExportButton.addEventListener("click", () =>
+    openReviewExportDialog("week"),
+  );
+  elements.exportCurrentYearReviewButton.addEventListener("click", () =>
+    openReviewExportDialog("year"),
+  );
+  for (const input of elements.reviewExportScopeInputs) {
+    input.addEventListener("change", () => {
+      state.reviewExportScope = currentReviewExportScope();
+      refreshReviewExportDialog();
+    });
+  }
+  elements.closeReviewExportDialog.addEventListener("click", () => {
+    elements.reviewExportDialog.close();
+  });
+  elements.cancelReviewExportButton.addEventListener("click", () => {
+    elements.reviewExportDialog.close();
+  });
+  elements.confirmReviewExportButton.addEventListener(
+    "click",
+    exportSelectedReviewRange,
+  );
   elements.exportReviewArchiveButton.addEventListener(
     "click",
     exportReviewArchive,
@@ -4445,10 +4609,11 @@ function bindEvents() {
     "click",
     requestDiscardReviewArchive,
   );
-  elements.deferReviewArchiveButton.addEventListener(
-    "click",
-    deferReviewArchive,
-  );
+  elements.reviewArchiveDialog.addEventListener("cancel", (event) => {
+    if (oldReviewEntries().length > 0) {
+      event.preventDefault();
+    }
+  });
   elements.cancelReviewArchiveConfirmButton.addEventListener("click", () => {
     state.pendingReviewArchiveMode = null;
     elements.reviewArchiveConfirm.hidden = true;
@@ -4540,13 +4705,15 @@ function bindEvents() {
     render();
   });
 
-  for (const button of [
-    elements.addTopButton,
-    elements.addFab,
-    elements.emptyAddButton,
-  ]) {
+  for (const button of [elements.addFab, elements.emptyAddButton]) {
     button.addEventListener("click", () => openAddDialog());
   }
+  elements.dayReviewEntry.addEventListener("click", () => {
+    state.reviewDate = state.selectedDate;
+    state.reviewLoadedDate = null;
+    state.view = "review";
+    render();
+  });
 
   elements.closeEventDialog.addEventListener("click", () => {
     state.confirmedOverrideDiscard = false;
@@ -4749,6 +4916,10 @@ function bindEvents() {
     "click",
     confirmMigration,
   );
+  elements.exportMigrationReviewButton.addEventListener("click", () => {
+    elements.migrationDialog.close();
+    requestAnimationFrame(() => openReviewExportDialog("year"));
+  });
 
   elements.timelineScroll.addEventListener(
     "scroll",
@@ -4804,6 +4975,7 @@ function bindEvents() {
       void refreshNativeNotifications();
       void syncNativeWidgetSnapshot(state.events);
       void handleWidgetLaunch();
+      maybePromptReviewArchive();
     }
   });
 }
@@ -4875,6 +5047,7 @@ if (nativeApp) {
         void refreshNativeNotifications();
         void handleWidgetLaunch();
         void handleAlarmLaunch();
+        maybePromptReviewArchive();
       }
     },
   );

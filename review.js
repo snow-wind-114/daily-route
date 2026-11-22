@@ -1,6 +1,10 @@
 import {
+  addDays,
+  endOfMonth,
   formatDayTitle,
   isISODate,
+  mondayBasedWeekday,
+  startOfMonth,
   timeToMinutes,
 } from "./date-utils.js";
 import {
@@ -211,6 +215,47 @@ export function removeReviewsBeforeYear(entries, year) {
   );
 }
 
+export function reviewRangeFor(scope, isoDate) {
+  if (!isISODate(isoDate)) {
+    throw new Error("回顾日期无效");
+  }
+  if (scope === "week") {
+    const startDate = addDays(isoDate, -mondayBasedWeekday(isoDate));
+    return { scope, startDate, endDate: addDays(startDate, 6) };
+  }
+  if (scope === "month") {
+    return {
+      scope,
+      startDate: startOfMonth(isoDate),
+      endDate: endOfMonth(isoDate),
+    };
+  }
+  if (scope === "year") {
+    const year = isoDate.slice(0, 4);
+    return {
+      scope,
+      startDate: `${year}-01-01`,
+      endDate: `${year}-12-31`,
+    };
+  }
+  throw new Error("回顾导出范围无效");
+}
+
+export function reviewEntriesInRange(entries, startDate, endDate) {
+  if (
+    !isISODate(startDate) ||
+    !isISODate(endDate) ||
+    startDate > endDate
+  ) {
+    return [];
+  }
+  return normalizeReviewEntries(entries)
+    .filter(hasReviewContent)
+    .filter(
+      (entry) => entry.date >= startDate && entry.date <= endDate,
+    );
+}
+
 function appendReportSection(lines, heading, value) {
   if (!value?.trim()) {
     return;
@@ -218,7 +263,10 @@ function appendReportSection(lines, heading, value) {
   lines.push(heading, "", value.trim(), "");
 }
 
-export function buildReviewMarkdown(entries, { year } = {}) {
+export function buildReviewMarkdown(
+  entries,
+  { year, startDate, endDate, title } = {},
+) {
   const selected = normalizeReviewEntries(entries)
     .filter(hasReviewContent)
     .filter(
@@ -226,13 +274,18 @@ export function buildReviewMarkdown(entries, { year } = {}) {
         year === undefined ||
         Number(entry.date.slice(0, 4)) === Number(year),
     )
+    .filter(
+      (entry) =>
+        (!startDate || entry.date >= startDate) &&
+        (!endDate || entry.date <= endDate),
+    )
     .sort((left, right) => left.date.localeCompare(right.date));
   const years = [
     ...new Set(selected.map((entry) => entry.date.slice(0, 4))),
   ];
-  const title =
+  const defaultTitle =
     years.length === 1 ? `${years[0]} 年 Daily Route 回顾` : "Daily Route 回顾";
-  const lines = [`# ${title}`, ""];
+  const lines = [`# ${title || defaultTitle}`, ""];
 
   for (const entry of selected) {
     lines.push(`## ${entry.date.slice(0, 4)}年${formatDayTitle(entry.date)}`, "");

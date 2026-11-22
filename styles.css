@@ -225,6 +225,53 @@ svg {
   flex-direction: column;
 }
 
+.day-review-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 20px 0;
+  padding: 10px 12px;
+  border: 1px solid #dce8ff;
+  border-radius: 14px;
+  background: #f7faff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.day-review-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--accent-soft-strong);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.day-review-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.day-review-copy strong {
+  color: #34435a;
+  font-size: 12px;
+}
+
+.day-review-copy small {
+  overflow: hidden;
+  color: #8a94a5;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .week-view {
   display: flex;
   flex-direction: column;
@@ -256,6 +303,70 @@ svg {
   border: 1px solid #f0d6a8;
   border-radius: 15px;
   background: #fff9eb;
+}
+
+.review-export-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 16px;
+  border: 1px solid #dce8ff;
+  border-radius: 16px;
+  background: #f7faff;
+  color: var(--accent);
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-export-entry > span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.review-export-entry strong {
+  color: #34435a;
+  font-size: 13px;
+}
+
+.review-export-entry small {
+  color: #8793a6;
+  font-size: 10px;
+}
+
+.review-export-entry > span:last-child {
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.review-export-reminder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  border: 1px solid #cfe0ff;
+  border-radius: 14px;
+  background: #f2f7ff;
+}
+
+.review-export-reminder div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.review-export-reminder strong {
+  color: #314c7d;
+  font-size: 12px;
+}
+
+.review-export-reminder span {
+  color: #71809a;
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .review-archive-banner div {
@@ -485,6 +596,61 @@ svg {
 .review-archive-sheet {
   max-height: min(88dvh, 720px);
   overflow-y: auto;
+}
+
+.migration-export-button {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.review-export-sheet {
+  max-height: min(88dvh, 720px);
+  overflow-y: auto;
+}
+
+.review-export-anchor,
+.review-export-count {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.review-export-options {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.review-export-options label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f9fbff;
+  cursor: pointer;
+}
+
+.review-export-options label:focus-within {
+  border-color: #b9d1ff;
+  background: var(--accent-soft);
+}
+
+.review-export-options label span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.review-export-options strong {
+  color: #3f4b60;
+  font-size: 12px;
+}
+
+.review-export-options small {
+  color: #8b95a5;
+  font-size: 10px;
 }
 
 .review-archive-actions {

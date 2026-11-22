@@ -1,4 +1,4 @@
-const CACHE_NAME = "daily-route-v10";
+const CACHE_NAME = "daily-route-v11";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -17,6 +17,7 @@ const APP_SHELL = [
   "./review.js",
   "./schedule.js",
   "./update-check.js",
+  "./year-migration.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",

@@ -42,6 +42,7 @@ const files = [
   "sw.js",
   "update-check.js",
   "update.json",
+  "year-migration.js",
   "manifest.webmanifest",
 ];
 

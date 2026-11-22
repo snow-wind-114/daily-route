@@ -137,17 +137,6 @@
               <path d="M5.5 19c.8-3.2 3-5 6.5-5s5.7 1.8 6.5 5" />
             </svg>
           </button>
-          <button
-            class="icon-button"
-            id="addTopButton"
-            type="button"
-            aria-label="添加活动"
-            title="添加活动"
-          >
-            <svg aria-hidden="true" viewBox="0 0 24 24">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-          </button>
         </div>
       </header>
 
@@ -183,6 +172,15 @@
               </svg>
             </button>
           </div>
+
+          <button class="day-review-entry" id="dayReviewEntry" type="button">
+            <span class="day-review-icon" aria-hidden="true">记</span>
+            <span class="day-review-copy">
+              <strong id="dayReviewEntryTitle">查看今日回顾</strong>
+              <small id="dayReviewEntryDetail">查看今天的总结、感想和灵感</small>
+            </span>
+            <span class="activity-chevron" aria-hidden="true">›</span>
+          </button>
 
           <div class="day-empty" id="dayEmpty" hidden>
             <div>
@@ -328,6 +326,36 @@
           </div>
 
           <div class="review-scroll">
+            <button
+              class="review-export-entry"
+              id="openReviewExportButton"
+              type="button"
+            >
+              <span>
+                <strong>导出回顾</strong>
+                <small>本周 · 本月 · 本年度</small>
+              </span>
+              <span aria-hidden="true">导出</span>
+            </button>
+
+            <div
+              class="review-export-reminder"
+              id="reviewDecemberExportBanner"
+              hidden
+            >
+              <div>
+                <strong>今年的回顾将在跨年后清除</strong>
+                <span>请在 12 月 31 日前导出一份年度回顾册。</span>
+              </div>
+              <button
+                class="text-button"
+                id="exportCurrentYearReviewButton"
+                type="button"
+              >
+                立即导出
+              </button>
+            </div>
+
             <div class="review-archive-banner" id="reviewArchiveBanner" hidden>
               <div>
                 <strong>去年的回顾还没有归档</strong>
@@ -1310,9 +1338,16 @@
           </button>
         </div>
         <p class="recovery-note">
-          选择需要续到下一年度的定期和打卡项目。待办不会自动迁移，旧年未完成项目会保留在归档中。
+          选择要保留到下一年度的定期和打卡项目。待办不会迁移；确认后会立即创建次年活动。
         </p>
         <div class="migration-list" id="migrationList"></div>
+        <button
+          class="secondary-button migration-export-button"
+          id="exportMigrationReviewButton"
+          type="button"
+        >
+          导出本年度回顾
+        </button>
         <p class="form-error" id="migrationError" hidden></p>
         <div class="confirm-actions">
           <button class="secondary-button" id="skipMigrationButton" type="button">今年暂不迁移</button>
@@ -1353,13 +1388,6 @@
         </p>
         <div class="confirm-actions review-archive-actions">
           <button
-            class="secondary-button"
-            id="deferReviewArchiveButton"
-            type="button"
-          >
-            稍后处理
-          </button>
-          <button
             class="danger-button"
             id="discardReviewArchiveButton"
             type="button"
@@ -1396,6 +1424,64 @@
               确认清除
             </button>
           </div>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="reviewExportDialog">
+      <div class="confirm-sheet review-export-sheet">
+        <div class="account-header">
+          <div>
+            <p class="sheet-kicker">Markdown 回顾册</p>
+            <h2>导出回顾</h2>
+          </div>
+          <button
+            class="close-button"
+            id="closeReviewExportDialog"
+            type="button"
+            aria-label="关闭"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+        <p class="review-export-anchor" id="reviewExportAnchor"></p>
+        <div class="review-export-options">
+          <label>
+            <input
+              type="radio"
+              name="reviewExportScope"
+              value="week"
+              checked
+            />
+            <span><strong>本周</strong><small id="reviewExportWeekRange"></small></span>
+          </label>
+          <label>
+            <input type="radio" name="reviewExportScope" value="month" />
+            <span><strong>本月</strong><small id="reviewExportMonthRange"></small></span>
+          </label>
+          <label>
+            <input type="radio" name="reviewExportScope" value="year" />
+            <span><strong>本年度</strong><small id="reviewExportYearRange"></small></span>
+          </label>
+        </div>
+        <p class="review-export-count" id="reviewExportCount"></p>
+        <div class="confirm-actions">
+          <button
+            class="secondary-button"
+            id="cancelReviewExportButton"
+            type="button"
+          >
+            取消
+          </button>
+          <button
+            class="primary-button"
+            id="confirmReviewExportButton"
+            type="button"
+          >
+            生成并导出
+          </button>
         </div>
       </div>
     </dialog>

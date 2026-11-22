@@ -102,7 +102,7 @@ const result = await evaluate(`(async () => {
     String(new Date().getDate()).padStart(2, "0"),
   ].join("-");
 
-  document.querySelector("#addTopButton").click();
+  document.querySelector("#addFab").click();
   if (!document.querySelector("#eventDialog").open) throw new Error("添加弹窗未打开");
   input("#eventName", "自动化课程");
   input("#eventDate", tomorrow);
@@ -111,7 +111,7 @@ const result = await evaluate(`(async () => {
   submit();
   await wait();
 
-  document.querySelector("#addTopButton").click();
+  document.querySelector("#addFab").click();
   chooseKind("todo");
   input("#eventName", "自动化报告");
   input("#todoDeadlineDate", today);
@@ -119,7 +119,7 @@ const result = await evaluate(`(async () => {
   submit();
   await wait();
 
-  document.querySelector("#addTopButton").click();
+  document.querySelector("#addFab").click();
   chooseKind("checkin");
   input("#eventName", "自动化阅读");
   submit();
@@ -135,7 +135,7 @@ const result = await evaluate(`(async () => {
   const todayReviewEditable =
     !document.querySelector("#reviewSummary").disabled;
   const reviewAddActionsHidden =
-    document.querySelector("#addTopButton").hidden &&
+    !document.querySelector("#addTopButton") &&
     document.querySelector("#addFab").hidden;
   input("#reviewSummary", "今天完成了自动化回顾");
   document.querySelector("#dayNavButton").click();
@@ -153,6 +153,12 @@ const result = await evaluate(`(async () => {
     document.querySelector("#reviewCheckinList").textContent.includes("自动化阅读");
   const reviewIncludesTodo =
     document.querySelector("#reviewTodoList").textContent.includes("自动化报告");
+  document.querySelector("#openReviewExportButton").click();
+  const reviewExportDialogOpen =
+    document.querySelector("#reviewExportDialog").open;
+  const reviewExportCount =
+    document.querySelector("#reviewExportCount").textContent;
+  document.querySelector("#cancelReviewExportButton").click();
   document.querySelector("#previousReviewDayButton").click();
   await wait();
   const pastReviewReadonly =
@@ -163,6 +169,17 @@ const result = await evaluate(`(async () => {
   const todoCopyUsesCorrectCharacters =
     document.body.textContent.includes("待办") &&
     !document.body.textContent.includes("代办");
+  document.querySelector("#dayNavButton").click();
+  await wait();
+  document.querySelector("#previousDayButton").click();
+  await wait();
+  document.querySelector("#dayReviewEntry").click();
+  await wait();
+  const dayReviewTargetedPrevious =
+    !document.querySelector("#nextReviewDayButton").disabled &&
+    document.querySelector("#viewKicker").textContent === "回顾记录";
+  document.querySelector("#goTodayReviewButton").click();
+  await wait();
 
   document.querySelector("#weekNavButton").click();
   await wait();
@@ -286,8 +303,11 @@ const result = await evaluate(`(async () => {
     storedReviewSnapshot: storedReview?.activitySnapshot,
     reviewIncludesCheckin,
     reviewIncludesTodo,
+    reviewExportDialogOpen,
+    reviewExportCount,
     pastReviewReadonly,
     todoCopyUsesCorrectCharacters,
+    dayReviewTargetedPrevious,
     weekCalendarEditableDays,
     activityCalendarEditableDays,
     lifecycleLabels,
@@ -339,8 +359,11 @@ if (
   result.storedReviewSnapshot?.checkins?.[0]?.checked !== true ||
   !result.reviewIncludesCheckin ||
   !result.reviewIncludesTodo ||
+  !result.reviewExportDialogOpen ||
+  !result.reviewExportCount.includes("天回顾可导出") ||
   !result.pastReviewReadonly ||
   !result.todoCopyUsesCorrectCharacters ||
+  !result.dayReviewTargetedPrevious ||
   result.weekCalendarEditableDays !== 0 ||
   result.activityCalendarEditableDays !== 0 ||
   result.lifecycleLabels.archive !== "归档活动" ||

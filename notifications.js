@@ -100,6 +100,7 @@ export function buildReminderPlan(
     endDate = getScheduleWindow(startDate).endDate,
     now = new Date(),
     reviewReminder = DEFAULT_REVIEW_REMINDER,
+    migrationReminder = { enabled: false },
   } = {},
 ) {
   const plan = [];
@@ -234,6 +235,27 @@ export function buildReminderPlan(
       repeatDaily: true,
       reviewHour: hour,
       reviewMinute: minute,
+    });
+  }
+
+  if (
+    migrationReminder.enabled === true &&
+    now.getMonth() < 11
+  ) {
+    const targetYear = Number(
+      migrationReminder.targetYear ?? now.getFullYear() + 1,
+    );
+    const at = new Date(now.getFullYear(), 11, 1, 9, 0, 0, 0);
+    addPlanItem({
+      kind: "yearMigration",
+      seriesId: `year-migration-${targetYear}`,
+      occurrenceDate: `${now.getFullYear()}-12-01`,
+      effectiveDate: `${now.getFullYear()}-12-01`,
+      title: "年度迁移与回顾导出",
+      body: `请选择要保留到${targetYear}年的活动，并导出今年回顾。`,
+      at,
+      minutesBefore: 0,
+      mode: "notification",
     });
   }
 
@@ -451,7 +473,11 @@ function scheduledNotification(item, exact, channelId = null) {
 
 async function syncScheduledNotificationsInternal(
   activities,
-  { endDate, reviewReminder = DEFAULT_REVIEW_REMINDER } = {},
+  {
+    endDate,
+    reviewReminder = DEFAULT_REVIEW_REMINDER,
+    migrationReminder = { enabled: false },
+  } = {},
 ) {
   const plugin = getPlugin("LocalNotifications");
   if (!plugin) {
@@ -492,6 +518,7 @@ async function syncScheduledNotificationsInternal(
       endDate ??
       getScheduleWindow(todayISO()).endDate,
     reviewReminder,
+    migrationReminder,
   });
   const alarmJobs = plan.filter((item) => item.mode === "alarm");
   const regular = plan.filter((item) => item.mode !== "alarm");
