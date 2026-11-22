@@ -18,7 +18,7 @@ export const REMINDER_MODES = Object.freeze([
   "alarm",
 ]);
 
-function createId() {
+export function createId() {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID();
   }
@@ -101,7 +101,7 @@ function normalizeOverrides(rawOverrides) {
   );
 }
 
-function normalizePauses(rawPauses) {
+export function normalizePauses(rawPauses) {
   if (!Array.isArray(rawPauses)) {
     return [];
   }
@@ -189,6 +189,7 @@ export function normalizeSeries(raw) {
 
   return {
     id: typeof raw.id === "string" && raw.id ? raw.id : createId(),
+    kind: "schedule",
     title: title.slice(0, 80),
     date: raw.date,
     startTime: raw.startTime,
@@ -206,6 +207,20 @@ export function normalizeSeries(raw) {
     occurrenceOverrides: normalizeOverrides(raw.occurrenceOverrides),
     pauses: normalizePauses(raw.pauses),
     endBefore,
+    categoryId:
+      typeof raw.categoryId === "string" && raw.categoryId
+        ? raw.categoryId
+        : null,
+    year:
+      Number.isInteger(Number(raw.year)) &&
+      Number(raw.year) >= 1900 &&
+      Number(raw.year) <= 9999
+        ? Number(raw.year)
+        : Number(raw.date.slice(0, 4)),
+    archivedAt:
+      typeof raw.archivedAt === "string" ? raw.archivedAt : null,
+    archiveReason:
+      typeof raw.archiveReason === "string" ? raw.archiveReason : null,
     createdAt:
       typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
     updatedAt:
@@ -223,7 +238,7 @@ export function validateActivityInput(
   }
 
   if (!isWithinWindow(input.date, startDate, endDate)) {
-    return "日期必须位于今天起未来六个月内";
+    return "日期必须位于当前自然年内";
   }
 
   if (input.date < minimumDate) {
@@ -276,6 +291,8 @@ export function seriesFromInput(input, { id, createdAt } = {}) {
     repeatEvery: Number(input.repeatEvery),
     repeatCount: input.repeatCount === null ? null : Number(input.repeatCount),
     notes: input.notes,
+    categoryId: input.categoryId ?? null,
+    year: Number(input.date?.slice(0, 4)) || null,
     reminderMode: input.reminderMode,
     reminderMinutesBefore:
       input.reminderMinutesBefore ?? DEFAULT_REMINDER_MINUTES,
@@ -289,6 +306,9 @@ export function seriesFromInput(input, { id, createdAt } = {}) {
 
 function isNominalOccurrenceDate(series, occurrenceDate) {
   if (!isISODate(occurrenceDate) || occurrenceDate < series.date) {
+    return false;
+  }
+  if (occurrenceDate > `${series.date.slice(0, 4)}-12-31`) {
     return false;
   }
   if (series.endBefore && occurrenceDate >= series.endBefore) {
@@ -378,7 +398,18 @@ export function occurrencesBetween(events, startDate, endDate) {
   }
 
   for (const series of events) {
+    if (series.kind && series.kind !== "schedule") {
+      continue;
+    }
+    if (series.archivedAt) {
+      continue;
+    }
     if (series.date > endDate) {
+      continue;
+    }
+    const seriesEnd = `${series.date.slice(0, 4)}-12-31`;
+    const visibleEnd = seriesEnd < endDate ? seriesEnd : endDate;
+    if (startDate > visibleEnd) {
       continue;
     }
     if (series.endBefore && startDate >= series.endBefore) {
@@ -387,7 +418,7 @@ export function occurrencesBetween(events, startDate, endDate) {
 
     let candidate = series.date;
     let activeIndex = 0;
-    while (candidate <= endDate) {
+    while (candidate <= visibleEnd) {
       if (series.endBefore && candidate >= series.endBefore) {
         break;
       }
@@ -404,7 +435,10 @@ export function occurrencesBetween(events, startDate, endDate) {
         candidate,
       );
       if (candidate >= startDate || effectiveSeries.date >= startDate) {
-        if (effectiveSeries.date >= startDate && effectiveSeries.date <= endDate) {
+        if (
+          effectiveSeries.date >= startDate &&
+          effectiveSeries.date <= visibleEnd
+        ) {
           occurrences.push({
             series: effectiveSeries,
             originalSeries: series,

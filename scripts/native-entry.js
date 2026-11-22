@@ -10,6 +10,7 @@ import { LocalNotifications } from "@capacitor/local-notifications";
 import { Share } from "@capacitor/share";
 const DailyRouteWidget = registerPlugin("DailyRouteWidget");
 const DailyRouteDevice = registerPlugin("DailyRouteDevice");
+const DailyRouteAlarmScheduler = registerPlugin("DailyRouteAlarmScheduler");
 
 globalThis.DailyRouteNative = {
   App,
@@ -17,6 +18,7 @@ globalThis.DailyRouteNative = {
   Capacitor,
   DailyRouteWidget,
   DailyRouteDevice,
+  DailyRouteAlarmScheduler,
   Directory,
   Encoding,
   Filesystem,

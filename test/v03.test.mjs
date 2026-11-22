@@ -234,7 +234,7 @@ test("series edit preserves only overrides matching the new schedule", () => {
   );
 });
 
-test("native v2 storage migrates to v3 without losing account or events", () => {
+test("native storage migrates to v4 without losing account or events", () => {
   const storage = makeStorage();
   const event = makeSeries({ reminderMode: "notification" });
   storage.setItem(
@@ -272,12 +272,12 @@ test("invalid native storage version is rejected", () => {
   );
 });
 
-test("backup v1 remains importable and v2 omits account credentials", () => {
+test("backup v1 remains importable and v3 omits account credentials", () => {
   const event = makeSeries({ reminderMode: "alarm" });
   const v2 = createBackup([event], {
     now: new Date("2026-11-15T00:00:00.000Z"),
   });
-  assert.equal(v2.version, 2);
+  assert.equal(v2.version, 3);
   assert.equal(JSON.stringify(v2).includes("passwordHash"), false);
 
   const v1 = {
@@ -334,10 +334,22 @@ test("reminder plan uses original-date identity for moved occurrences", () => {
   assert.equal(plan[0].mode, "alarm");
 });
 
-test("notification sync separates inexact notices and exact alarm parameters", async () => {
+test("notification sync separates plugin notices from native alarm jobs", async () => {
   const scheduled = [];
+  const nativeAlarms = [];
   globalThis.DailyRouteNative = {
     Capacitor: { isNativePlatform: () => true },
+    DailyRouteAlarmScheduler: {
+      syncJobs: async ({ json }) => {
+        const jobs = JSON.parse(json);
+        nativeAlarms.push(...jobs);
+        return {
+          plannedJobs: jobs.length,
+          scheduledSources: new Set(jobs.map((job) => job.sourceId)).size,
+          nextAt: jobs[0]?.at ?? null,
+        };
+      },
+    },
     LocalNotifications: {
       checkPermissions: async () => ({ display: "granted" }),
       checkExactNotificationSetting: async () => ({ exact_alarm: "granted" }),
@@ -349,26 +361,27 @@ test("notification sync separates inexact notices and exact alarm parameters", a
 
   const notice = makeSeries({
     title: "普通通知",
+    date: "2026-12-01",
     reminderMode: "notification",
     repeatCount: 1,
   });
   const alarm = makeSeries({
     title: "精确闹钟",
-    date: "2026-11-17",
+    date: "2026-12-02",
     reminderMode: "alarm",
     repeatCount: 1,
   });
   const status = await syncScheduledNotifications([notice, alarm]);
   const regular = scheduled.find((item) => item.title === "普通通知");
-  const exact = scheduled.find((item) => item.title === "精确闹钟");
 
   assert.equal(status.scheduled, 2);
+  assert.equal(status.alarmPlanned, 1);
+  assert.equal(status.alarmScheduled, 1);
   assert.equal(status.downgraded, 0);
   assert.equal(regular.isExactNotification, false);
   assert.equal(regular.schedule.allowWhileIdle, false);
-  assert.equal(exact.isExactNotification, true);
-  assert.equal(exact.isExactMandatory, true);
-  assert.equal(exact.schedule.allowWhileIdle, true);
+  assert.equal(nativeAlarms[0].title, "精确闹钟");
+  assert.match(nativeAlarms[0].at, /^2026-12-02T/);
   delete globalThis.DailyRouteNative;
 });
 
@@ -388,6 +401,7 @@ test("alarm sync downgrades when exact alarm access is denied", async () => {
   const status = await syncScheduledNotifications([
     makeSeries({
       reminderMode: "alarm",
+      date: "2026-12-01",
       repeatCount: 1,
     }),
   ]);
@@ -421,11 +435,16 @@ test("blocked alarm channel falls back to the normal notification channel", asyn
   const channels = await getReminderChannelState();
   assert.equal(channels.alarmChannelBlocked, true);
   const status = await syncScheduledNotifications([
-    makeSeries({ reminderMode: "alarm", repeatCount: 1 }),
+    makeSeries({
+      reminderMode: "alarm",
+      date: "2026-12-01",
+      repeatCount: 1,
+    }),
   ]);
   assert.equal(status.downgraded, 1);
   assert.equal(scheduled[0].channelId, "daily-route-notifications-v1");
-  assert.equal(scheduled[0].isExactNotification, true);
+  assert.equal(scheduled[0].isExactNotification, false);
+  assert.equal(scheduled[0].schedule.allowWhileIdle, false);
   delete globalThis.DailyRouteNative;
 });
 

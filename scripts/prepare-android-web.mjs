@@ -27,6 +27,8 @@ const files = [
   "index.html",
   "styles.css",
   "app.js",
+  "activities.js",
+  "alarm-scheduler.js",
   "account.js",
   "app-state.js",
   "backup.js",

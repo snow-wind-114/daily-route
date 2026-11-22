@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(DailyRouteDevicePlugin.class);
         registerPlugin(DailyRouteWidgetPlugin.class);
+        registerPlugin(DailyRouteAlarmSchedulerPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

@@ -1,4 +1,13 @@
 import {
+  isActivityArchived,
+  todoReminderDate,
+} from "./activities.js";
+import {
+  clearNativeAlarmJobs,
+  scheduleNativeTestAlarm,
+  syncNativeAlarmJobs,
+} from "./alarm-scheduler.js";
+import {
   getScheduleWindow,
   parseISODate,
   timeToMinutes,
@@ -50,8 +59,8 @@ function reminderDate(occurrence, minutesBefore) {
   return result;
 }
 
-function notificationId(seriesId, occurrenceDate) {
-  const value = `${seriesId}|${occurrenceDate}`;
+export function notificationId(identity, occurrenceDate) {
+  const value = `${identity}|${occurrenceDate}`;
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);
@@ -61,7 +70,7 @@ function notificationId(seriesId, occurrenceDate) {
 }
 
 export function buildReminderPlan(
-  events,
+  activities,
   {
     startDate = todayISO(),
     endDate = getScheduleWindow(startDate).endDate,
@@ -71,38 +80,61 @@ export function buildReminderPlan(
   const plan = [];
   const usedIds = new Set();
 
-  for (const occurrence of occurrencesBetween(events, startDate, endDate)) {
-    const { series } = occurrence;
-    if (!series.reminderMode || series.reminderMode === "none") {
-      continue;
+  const addPlanItem = (item) => {
+    if (!item.at || item.at.getTime() <= now.getTime()) {
+      return;
     }
-
-    const at = reminderDate(
-      occurrence,
-      series.reminderMinutesBefore,
-    );
-    if (!at || at.getTime() <= now.getTime()) {
-      continue;
-    }
-
-    let id = notificationId(series.id, occurrence.originalDate);
+    let id = notificationId(item.seriesId, item.occurrenceDate);
     while (usedIds.has(id)) {
       id = (id + 1) & 0x7fffffff;
     }
     usedIds.add(id);
+    plan.push({ ...item, id });
+  };
 
+  for (const occurrence of occurrencesBetween(activities, startDate, endDate)) {
+    const { series } = occurrence;
+    if (!series.reminderMode || series.reminderMode === "none") {
+      continue;
+    }
     const timeRange = `${series.startTime}–${series.endTime}`;
     const note = series.notes.trim();
-    plan.push({
-      id,
+    addPlanItem({
+      kind: "schedule",
       seriesId: series.id,
       occurrenceDate: occurrence.originalDate,
       effectiveDate: occurrence.date,
       title: series.title,
       body: note ? `${timeRange} · ${note.slice(0, 120)}` : timeRange,
-      at,
+      at: reminderDate(occurrence, series.reminderMinutesBefore),
       minutesBefore: series.reminderMinutesBefore,
       mode: series.reminderMode,
+    });
+  }
+
+  for (const activity of activities) {
+    if (
+      activity.kind !== "todo" ||
+      isActivityArchived(activity) ||
+      activity.reminderMode === "none" ||
+      activity.deadlineDate < startDate ||
+      activity.deadlineDate > endDate
+    ) {
+      continue;
+    }
+    const note = activity.notes.trim();
+    addPlanItem({
+      kind: "todo",
+      seriesId: activity.id,
+      occurrenceDate: activity.deadlineDate,
+      effectiveDate: activity.deadlineDate,
+      title: activity.title,
+      body: note
+        ? `截止 ${activity.deadlineDate} ${activity.deadlineTime} · ${note.slice(0, 110)}`
+        : `截止 ${activity.deadlineDate} ${activity.deadlineTime}`,
+      at: todoReminderDate(activity),
+      minutesBefore: activity.reminderDaysBefore * 1440,
+      mode: activity.reminderMode,
     });
   }
 
@@ -210,10 +242,12 @@ export async function getReminderChannelState() {
         notificationChannelBlocked:
           diagnostics.notificationChannel?.importance === 0,
         alarmChannelBlocked: diagnostics.alarmChannel?.importance === 0,
-        alarmChannelImportance:
-          Number(diagnostics.alarmChannel?.importance ?? -1),
-        notificationChannelImportance:
-          Number(diagnostics.notificationChannel?.importance ?? -1),
+        alarmChannelImportance: Number(
+          diagnostics.alarmChannel?.importance ?? -1,
+        ),
+        notificationChannelImportance: Number(
+          diagnostics.notificationChannel?.importance ?? -1,
+        ),
       };
     } catch {
       // Fall back to Capacitor channel data below.
@@ -293,6 +327,7 @@ function scheduledNotification(item, exact, channelId = null) {
     },
     extra: {
       kind: REMINDER_KIND,
+      activityKind: item.kind,
       seriesId: item.seriesId,
       occurrenceDate: item.occurrenceDate,
       effectiveDate: item.effectiveDate,
@@ -302,7 +337,10 @@ function scheduledNotification(item, exact, channelId = null) {
   };
 }
 
-export async function syncScheduledNotifications(events) {
+async function syncScheduledNotificationsInternal(
+  activities,
+  { endDate } = {},
+) {
   const plugin = getPlugin("LocalNotifications");
   if (!plugin) {
     return {
@@ -310,7 +348,10 @@ export async function syncScheduledNotifications(events) {
       granted: false,
       exactAlarmGranted: false,
       scheduled: 0,
+      alarmPlanned: 0,
+      alarmScheduled: 0,
       downgraded: 0,
+      nextAt: null,
     };
   }
 
@@ -324,66 +365,90 @@ export async function syncScheduledNotifications(events) {
       ...permission,
       exactAlarmGranted: exactAlarm.granted,
       scheduled: 0,
+      alarmPlanned: 0,
+      alarmScheduled: 0,
       downgraded: 0,
+      nextAt: null,
     };
   }
 
   await createChannels(plugin);
   const channelState = await getReminderChannelState();
-
-  const plan = buildReminderPlan(events);
+  const plan = buildReminderPlan(activities, {
+    startDate: todayISO(),
+    endDate:
+      endDate ??
+      getScheduleWindow(todayISO()).endDate,
+  });
+  const alarmJobs = plan.filter((item) => item.mode === "alarm");
   const regular = plan.filter((item) => item.mode !== "alarm");
-  const alarms = plan.filter((item) => item.mode === "alarm");
   let downgraded = 0;
-  const alarmChannelId =
-    channelState.alarmChannelBlocked
-      ? NOTIFICATION_CHANNEL_ID
-      : ALARM_CHANNEL_ID;
+  let alarmDiagnostics = {
+    plannedJobs: alarmJobs.length,
+    scheduledSources: 0,
+    nextAt: null,
+    exactAlarmGranted: exactAlarm.granted,
+    lastError: null,
+  };
 
-  if (regular.length > 0) {
+  const canUseNativeAlarm =
+    alarmJobs.length > 0 &&
+    exactAlarm.granted &&
+    !channelState.alarmChannelBlocked;
+  if (canUseNativeAlarm) {
+    try {
+      alarmDiagnostics = await syncNativeAlarmJobs(alarmJobs);
+    } catch (error) {
+      alarmDiagnostics.lastError = error.message;
+    }
+  }
+
+  const useDowngradedAlarms =
+    alarmJobs.length > 0 &&
+    (!canUseNativeAlarm ||
+      alarmDiagnostics.supported === false ||
+      Number(alarmDiagnostics.scheduledSources ?? 0) === 0);
+  const downgradedAlarms = useDowngradedAlarms ? alarmJobs : [];
+  const localPlan = [...regular, ...downgradedAlarms];
+
+  if (localPlan.length > 0) {
     await plugin.schedule({
-      notifications: regular.map((item) => scheduledNotification(item, false)),
+      notifications: localPlan.map((item) => {
+        const wantsAlarm = item.mode === "alarm";
+        const alarmChannelId =
+          wantsAlarm && !channelState.alarmChannelBlocked
+            ? ALARM_CHANNEL_ID
+            : NOTIFICATION_CHANNEL_ID;
+        return scheduledNotification(item, false, alarmChannelId);
+      }),
     });
   }
-
-  if (alarms.length > 0) {
-    let alarmDowngraded = channelState.alarmChannelBlocked;
-    if (exactAlarm.granted) {
-      try {
-        await plugin.schedule({
-          notifications: alarms.map((item) =>
-            scheduledNotification(item, true, alarmChannelId),
-          ),
-        });
-      } catch (error) {
-        console.error("精确闹钟安排失败，已降级为普通通知", error);
-        await plugin.schedule({
-          notifications: alarms.map((item) =>
-            scheduledNotification(item, false, alarmChannelId),
-          ),
-        });
-        alarmDowngraded = true;
-      }
-    } else {
-      await plugin.schedule({
-        notifications: alarms.map((item) =>
-          scheduledNotification(item, false, alarmChannelId),
-        ),
-      });
-      alarmDowngraded = true;
-    }
-    if (alarmDowngraded) {
-      downgraded += alarms.length;
-    }
-  }
+  downgraded += downgradedAlarms.length;
 
   return {
     ...permission,
     exactAlarmGranted: exactAlarm.granted,
     channelState,
     scheduled: plan.length,
+    alarmPlanned: alarmJobs.length,
+    alarmScheduled: Number(alarmDiagnostics.scheduledSources ?? 0),
+    nextAt:
+      alarmDiagnostics.nextAt ??
+      (localPlan[0]?.at ? localPlan[0].at.toISOString() : null),
     downgraded,
+    lastError: alarmDiagnostics.lastError ?? null,
   };
+}
+
+let notificationSyncQueue = Promise.resolve();
+
+export function syncScheduledNotifications(activities, options = {}) {
+  const next = notificationSyncQueue.then(
+    () => syncScheduledNotificationsInternal(activities, options),
+    () => syncScheduledNotificationsInternal(activities, options),
+  );
+  notificationSyncQueue = next.catch(() => {});
+  return next;
 }
 
 export async function clearScheduledNotifications() {
@@ -392,83 +457,90 @@ export async function clearScheduledNotifications() {
     return;
   }
   await cancelOwnedNotifications(plugin);
+  await clearNativeAlarmJobs();
 }
 
 export async function scheduleTestReminder(
   mode,
   { delaySeconds = 5 } = {},
 ) {
-  const plugin = getPlugin("LocalNotifications");
-  if (!plugin) {
-    throw new Error("当前设备不支持本地提醒");
-  }
-
   const permission = await getNotificationPermissionState();
   if (!permission.granted) {
     throw new Error("请先开启通知权限");
   }
 
-  const exactAlarm = await getExactAlarmPermissionState();
-  const wantsAlarm = mode === "alarm";
-  const exact = wantsAlarm && exactAlarm.granted;
+  if (mode === "alarm") {
+    try {
+      const channels = await getReminderChannelState();
+      if (channels.alarmChannelBlocked) {
+        throw new Error("活动闹钟通道已关闭");
+      }
+      await scheduleNativeTestAlarm({ delaySeconds });
+      return {
+        mode,
+        exact: true,
+        downgraded: false,
+        channelFallback: false,
+      };
+    } catch (error) {
+      const plugin = getPlugin("LocalNotifications");
+      if (!plugin) {
+        throw error;
+      }
+      await createChannels(plugin);
+      const at = new Date(Date.now() + delaySeconds * 1000);
+      await plugin.schedule({
+        notifications: [
+          {
+            id: notificationId(`test-${Date.now()}`, todayISO()),
+            title: "闹钟提醒测试",
+            body: "原生闹钟不可用，本次已降级为普通通知。",
+            channelId: NOTIFICATION_CHANNEL_ID,
+            isExactNotification: false,
+            isExactMandatory: false,
+            schedule: { at, allowWhileIdle: false },
+            extra: { kind: REMINDER_KIND, test: true, exact: false },
+          },
+        ],
+      });
+      return {
+        mode,
+        exact: false,
+        downgraded: true,
+        channelFallback: true,
+      };
+    }
+  }
+
+  const plugin = getPlugin("LocalNotifications");
+  if (!plugin) {
+    throw new Error("当前设备不支持本地提醒");
+  }
   await createChannels(plugin);
   const channelState = await getReminderChannelState();
-  const channelFallback = wantsAlarm && channelState.alarmChannelBlocked;
-  const channelId =
-    wantsAlarm && !channelFallback
-      ? ALARM_CHANNEL_ID
-      : NOTIFICATION_CHANNEL_ID;
-  if (channelId === NOTIFICATION_CHANNEL_ID &&
-      channelState.notificationChannelBlocked) {
+  if (channelState.notificationChannelBlocked) {
     throw new Error("活动通知通道已关闭，请到系统通知设置中重新开启");
   }
   const at = new Date(Date.now() + delaySeconds * 1000);
-  const id = notificationId(`test-${Date.now()}`, todayISO());
-
-  const notification = (exactValue) => ({
-        id,
-        title: wantsAlarm ? "闹钟提醒测试" : "通知提醒测试",
-        body: exactValue
-          ? "精确闹钟已生效。"
-          : wantsAlarm
-            ? channelFallback
-              ? "活动闹钟通道已关闭，本次改用普通通知发送。"
-              : "精确闹钟权限未开启，本次按普通通知发送。"
-            : "普通通知最多允许系统延迟几分钟。",
-        channelId,
-        isExactNotification: exactValue,
-        isExactMandatory: exactValue,
-        schedule: {
-          at,
-          allowWhileIdle: exactValue,
-        },
-        extra: {
-          kind: REMINDER_KIND,
-          test: true,
-          exact: exactValue,
-        },
-      });
-
-  try {
-    await plugin.schedule({ notifications: [notification(exact)] });
-  } catch (error) {
-    if (!exact) {
-      throw error;
-    }
-    await plugin.schedule({ notifications: [notification(false)] });
-    return {
-      mode,
-      exact: false,
-      downgraded: true,
-      channelFallback,
-    };
-  }
-
+  await plugin.schedule({
+    notifications: [
+      {
+        id: notificationId(`test-${Date.now()}`, todayISO()),
+        title: "通知提醒测试",
+        body: "普通通知最多允许系统延迟几分钟。",
+        channelId: NOTIFICATION_CHANNEL_ID,
+        isExactNotification: false,
+        isExactMandatory: false,
+        schedule: { at, allowWhileIdle: false },
+        extra: { kind: REMINDER_KIND, test: true, exact: false },
+      },
+    ],
+  });
   return {
     mode,
-    exact,
-    downgraded: wantsAlarm && (!exact || channelFallback),
-    channelFallback,
+    exact: false,
+    downgraded: false,
+    channelFallback: false,
   };
 }
 

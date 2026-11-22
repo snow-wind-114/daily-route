@@ -1,4 +1,7 @@
-import { normalizeSeries } from "./schedule.js";
+import {
+  normalizeActivities,
+  normalizeCategories,
+} from "./activities.js";
 
 export const RECOVERY_STORAGE_KEY = "daily-route.recovery.v1";
 export const LAST_EXPORT_STORAGE_KEY = "daily-route.last-export.v1";
@@ -29,19 +32,35 @@ export function readRecoveryPoints(storage = localStorage) {
         createdAt:
           typeof point.createdAt === "string" ? point.createdAt : "",
         reason: typeof point.reason === "string" ? point.reason : "自动恢复点",
-        events: point.events.map(normalizeSeries).filter(Boolean),
+        events: normalizeActivities(point.events),
+        categories: normalizeCategories(point.categories),
+        yearMigrationCompletedFor: Number(
+          point.yearMigrationCompletedFor ??
+            new Date(point.createdAt).getFullYear(),
+        ),
       };
     })
     .filter((point) => point?.id && point.createdAt);
 }
 
 export function addRecoveryPoint(
-  events,
+  stateOrEvents,
   reason,
   { storage = localStorage, now = new Date() } = {},
 ) {
-  const normalizedEvents = events.map(normalizeSeries).filter(Boolean);
-  const signature = JSON.stringify(normalizedEvents);
+  const state = Array.isArray(stateOrEvents)
+    ? {
+        events: stateOrEvents,
+        categories: {},
+        yearMigrationCompletedFor: now.getFullYear(),
+      }
+    : stateOrEvents;
+  const normalizedEvents = normalizeActivities(state.events);
+  const normalizedCategories = normalizeCategories(state.categories);
+  const signature = JSON.stringify({
+    events: normalizedEvents,
+    categories: normalizedCategories,
+  });
   const current = readRecoveryPoints(storage);
   if (current[0] && JSON.stringify(current[0].events) === signature) {
     return current;
@@ -52,6 +71,10 @@ export function addRecoveryPoint(
     createdAt: now.toISOString(),
     reason: String(reason || "自动恢复点").slice(0, 60),
     events: normalizedEvents,
+    categories: normalizedCategories,
+    yearMigrationCompletedFor: Number(
+      state.yearMigrationCompletedFor ?? now.getFullYear(),
+    ),
   };
   const updated = [point, ...current].slice(0, MAX_RECOVERY_POINTS);
   storage.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(updated));

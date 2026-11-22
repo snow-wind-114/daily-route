@@ -8,6 +8,7 @@ android/local.properties
 android/keystore.properties
 android/app/build/
 android/build/
+.edge-*/
 *.jks
 *.keystore
 *.aab

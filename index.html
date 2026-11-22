@@ -194,6 +194,8 @@
             </button>
           </div>
 
+          <div class="day-shortcuts" id="dayShortcuts"></div>
+
           <div class="timeline-scroll" id="timelineScroll">
             <div class="timeline-root" id="timelineRoot">
               <div class="time-labels" id="timeLabels"></div>
@@ -289,7 +291,7 @@
 
           <div class="month-legend">
             <span><i aria-hidden="true"></i>有活动</span>
-            <span>刻度每格 2 小时 · 仅显示未来六月</span>
+            <span>刻度每格 2 小时 · 右上角红字为代办截止数</span>
           </div>
         </section>
 
@@ -313,13 +315,51 @@
             />
           </label>
 
+          <div class="activity-toolbar">
+            <select id="activityCategoryFilter" aria-label="筛选活动分类">
+              <option value="">全部分类</option>
+            </select>
+            <button class="secondary-button" id="manageCategoriesButton" type="button">
+              分类管理
+            </button>
+            <button class="secondary-button" id="archiveToggleButton" type="button">
+              查看归档
+            </button>
+          </div>
+
+          <div class="year-migration-banner" id="yearMigrationBanner" hidden>
+            <div>
+              <strong id="yearMigrationTitle">准备下一年度</strong>
+              <span id="yearMigrationMessage"></span>
+            </div>
+            <button class="text-button" id="openMigrationButton" type="button">
+              开始迁移
+            </button>
+          </div>
+
           <div class="activity-sections" id="activitySections">
             <section class="activity-section" id="activeActivitySection">
               <div class="section-heading">
-                <h2>进行中</h2>
+                <h2>定期</h2>
                 <span id="activeActivityCount">0</span>
               </div>
               <div class="activity-list" id="activeActivityList"></div>
+            </section>
+
+            <section class="activity-section" id="todoActivitySection">
+              <div class="section-heading">
+                <h2>代办</h2>
+                <span id="todoActivityCount">0</span>
+              </div>
+              <div class="activity-list" id="todoActivityList"></div>
+            </section>
+
+            <section class="activity-section" id="checkinActivitySection">
+              <div class="section-heading">
+                <h2>打卡</h2>
+                <span id="checkinActivityCount">0</span>
+              </div>
+              <div class="activity-list" id="checkinActivityList"></div>
             </section>
 
             <section class="activity-section" id="pausedActivitySection">
@@ -330,12 +370,15 @@
               <div class="activity-list" id="pausedActivityList"></div>
             </section>
 
-            <section class="activity-section" id="inactiveActivitySection">
+            <section class="activity-section" id="archiveActivitySection" hidden>
               <div class="section-heading">
-                <h2>已结束</h2>
+                <div class="section-heading-copy">
+                  <h2>归档</h2>
+                  <select id="archiveYearSelect" aria-label="归档年份"></select>
+                </div>
                 <span id="inactiveActivityCount">0</span>
               </div>
-              <div class="activity-list" id="inactiveActivityList"></div>
+              <div class="archive-groups" id="inactiveActivityList"></div>
             </section>
 
             <div class="activity-empty" id="activityEmpty" hidden>
@@ -430,6 +473,24 @@
         </div>
 
         <div class="form-fields">
+          <div class="field field-full" id="activityKindField">
+            <span class="field-label">活动类型</span>
+            <div class="segmented-control segmented-three" role="radiogroup" aria-label="活动类型">
+              <label>
+                <input type="radio" name="activityKind" value="schedule" checked />
+                <span>定期</span>
+              </label>
+              <label>
+                <input type="radio" name="activityKind" value="todo" />
+                <span>代办</span>
+              </label>
+              <label>
+                <input type="radio" name="activityKind" value="checkin" />
+                <span>打卡</span>
+              </label>
+            </div>
+          </div>
+
           <label class="field field-full">
             <span>活动名称</span>
             <input
@@ -443,20 +504,79 @@
             />
           </label>
 
-          <label class="field field-full">
+          <label class="field field-full" id="activityCategoryField">
+            <span>分类</span>
+            <select id="activityCategory" name="categoryId">
+              <option value="">未分类</option>
+            </select>
+          </label>
+
+          <label class="field field-full" id="eventDateField">
             <span>日期</span>
             <input id="eventDate" name="date" type="date" required />
           </label>
 
-          <label class="field">
+          <label class="field" id="startTimeField">
             <span>开始时间</span>
             <input id="startTime" name="startTime" type="time" required />
           </label>
 
-          <label class="field">
+          <label class="field" id="endTimeField">
             <span>结束时间</span>
             <input id="endTime" name="endTime" type="time" required />
           </label>
+
+          <label class="field field-full" id="todoDeadlineDateField" hidden>
+            <span>截止日期</span>
+            <input id="todoDeadlineDate" type="date" required />
+          </label>
+
+          <label class="field field-full" id="todoDeadlineTimeField" hidden>
+            <span>截止时间</span>
+            <input id="todoDeadlineTime" type="time" value="18:00" required />
+          </label>
+
+          <div
+            class="field field-full reminder-field native-only"
+            id="todoReminderField"
+            hidden
+          >
+            <span class="field-label">代办提醒</span>
+            <div class="reminder-options" role="radiogroup" aria-label="代办提醒方式">
+              <label>
+                <input type="radio" name="todoReminderMode" value="none" checked />
+                <span><strong>不提醒</strong><small>静默</small></span>
+              </label>
+              <label>
+                <input type="radio" name="todoReminderMode" value="notification" />
+                <span><strong>通知</strong><small>可能延迟</small></span>
+              </label>
+              <label>
+                <input type="radio" name="todoReminderMode" value="alarm" />
+                <span><strong>闹钟</strong><small>尽量准点</small></span>
+              </label>
+            </div>
+            <label class="reminder-time" id="todoReminderDaysField">
+              <span>提前</span>
+              <input
+                id="todoReminderDaysBefore"
+                type="number"
+                min="0"
+                max="30"
+                step="1"
+                value="0"
+                inputmode="numeric"
+              />
+              <span>天，0 天为截止时提醒</span>
+            </label>
+            <p class="reminder-status" id="todoReminderStatusNote">
+              提醒时间已经过去时不能保存。
+            </p>
+          </div>
+
+          <div class="field field-full checkin-note" id="checkinFormNote" hidden>
+            打卡项目不设置日期；创建后可在今天页和专属月历中打卡。
+          </div>
 
           <div class="field field-full" id="editScopeField" hidden>
             <span class="field-label">修改范围</span>
@@ -495,7 +615,7 @@
               </label>
               <label>
                 <input type="radio" name="repeatMode" value="infinite" />
-                <span>无限次</span>
+                <span>至年底</span>
               </label>
             </div>
           </div>
@@ -608,6 +728,14 @@
             hidden
           >
             暂停活动
+          </button>
+          <button
+            class="secondary-button"
+            id="completeEventButton"
+            type="button"
+            hidden
+          >
+            完成并归档
           </button>
           <button
             class="danger-button"
@@ -896,6 +1024,87 @@
       accept=".json,application/json"
       hidden
     />
+
+    <dialog class="confirm-dialog" id="checkinCalendarDialog">
+      <div class="checkin-calendar-sheet">
+        <div class="account-header">
+          <div>
+            <p class="sheet-kicker">打卡月历</p>
+            <h2 id="checkinCalendarTitle">打卡项目</h2>
+          </div>
+          <button class="close-button" id="closeCheckinCalendar" type="button" aria-label="关闭">
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+        <div class="month-navigation">
+          <button class="date-arrow" id="previousCheckinMonth" type="button" aria-label="上个月">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>
+          </button>
+          <button class="today-button" id="currentCheckinMonth" type="button">本月</button>
+          <button class="date-arrow" id="nextCheckinMonth" type="button" aria-label="下个月">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></svg>
+          </button>
+        </div>
+        <div class="checkin-month-title" id="checkinMonthTitle"></div>
+        <div class="weekday-row" aria-hidden="true">
+          <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+        </div>
+        <div class="checkin-calendar-grid" id="checkinCalendarGrid"></div>
+        <p class="recovery-note">点击今天或今年过去的日期切换打卡；未来日期和暂停区间不可操作。</p>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="categoryDialog">
+      <div class="category-sheet">
+        <div class="account-header">
+          <div>
+            <p class="sheet-kicker">按活动类型管理</p>
+            <h2>分类管理</h2>
+          </div>
+          <button class="close-button" id="closeCategoryDialog" type="button" aria-label="关闭">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+        <div class="field">
+          <span>活动类型</span>
+          <select id="categoryKindSelect">
+            <option value="schedule">定期</option>
+            <option value="todo">代办</option>
+            <option value="checkin">打卡</option>
+          </select>
+        </div>
+        <div class="category-list" id="categoryList"></div>
+        <div class="category-add-row">
+          <input id="newCategoryName" maxlength="24" placeholder="新分类名称" />
+          <button class="primary-button" id="addCategoryButton" type="button">添加</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="migrationDialog">
+      <div class="migration-sheet">
+        <div class="account-header">
+          <div>
+            <p class="sheet-kicker">下一自然年</p>
+            <h2 id="migrationDialogTitle">年度迁移</h2>
+          </div>
+          <button class="close-button" id="closeMigrationDialog" type="button" aria-label="关闭">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+        <p class="recovery-note">
+          选择需要续到下一年度的定期和打卡项目。代办不会自动迁移，旧年未完成项目会保留在归档中。
+        </p>
+        <div class="migration-list" id="migrationList"></div>
+        <p class="form-error" id="migrationError" hidden></p>
+        <div class="confirm-actions">
+          <button class="secondary-button" id="skipMigrationButton" type="button">今年暂不迁移</button>
+          <button class="primary-button" id="confirmMigrationButton" type="button">确认迁移</button>
+        </div>
+      </div>
+    </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 

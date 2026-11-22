@@ -1,15 +1,15 @@
 {
-  "versionCode": 5,
-  "versionName": "0.3.2",
+  "versionCode": 6,
+  "versionName": "0.4.0",
   "apkUrl": "https://github.com/snow-wind-114/daily-route/releases/latest/download/daily-route.apk",
-  "releaseUrl": "https://github.com/snow-wind-114/daily-route/releases/tag/v0.3.2",
+  "releaseUrl": "https://github.com/snow-wind-114/daily-route/releases/tag/v0.4.0",
   "notes": [
-    "新增普通通知与精确闹钟两种提醒方式",
-    "支持只修改某一次、修改本次及以后和暂停整个活动",
-    "新增今天活动桌面组件",
-    "新增本地恢复点、导入预览和版本更新检查",
-    "修复安卓桌面组件添加到主屏后无法加载的问题",
-    "增加闹钟通道诊断、测试降级和系统设置入口",
-    "改进桌面组件在真机启动器中的名称与静态预览"
+    "新增定期、代办和打卡三类活动",
+    "主视图扩展为当前完整自然年，并支持归档年份切换",
+    "月历显示每天代办截止数量，打卡项目提供专属月历",
+    "新增活动分类、完成归档和年底批量迁移",
+    "活动闹钟改用应用自有原生排程器，触发后自动安排下一次",
+    "提醒同步改为串行执行，并显示系统实际排程数量",
+    "备份格式升级并保留旧版备份、账户和活动兼容"
   ]
 }

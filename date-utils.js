@@ -78,9 +78,10 @@ export function addMonthsClamped(isoDate, amount) {
 }
 
 export function getScheduleWindow(startDate = todayISO()) {
+  const year = Number(startDate.slice(0, 4));
   return {
-    startDate,
-    endDate: addDays(addMonthsClamped(startDate, 6), -1),
+    startDate: `${year}-01-01`,
+    endDate: `${year}-12-31`,
   };
 }
 

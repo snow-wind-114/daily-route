@@ -32,10 +32,10 @@ function makeSeries(overrides = {}) {
   });
 }
 
-test("six-month window ends the day before the same date six months later", () => {
+test("schedule window covers the full current natural year", () => {
   assert.deepEqual(getScheduleWindow("2026-11-13"), {
-    startDate: "2026-11-13",
-    endDate: "2027-05-12",
+    startDate: "2026-01-01",
+    endDate: "2026-12-31",
   });
   assert.equal(addMonthsClamped("2026-08-31", 6), "2027-02-28");
 });
