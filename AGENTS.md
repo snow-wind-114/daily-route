@@ -4,8 +4,8 @@
 
 ## 版本与发布地址
 
-- 当前版本：`v0.6.0`
-- Android：`versionCode=10`、`versionName=0.6.0`
+- 当前版本：`v0.6.1`
+- Android：`versionCode=11`、`versionName=0.6.1`
 - 版本日期：`2026-11-23`
 - 网页：<https://snow-wind-114.github.io/daily-route/>
 - 固定 APK：
@@ -27,6 +27,7 @@
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| `v0.6.1` | 2026-11-23 | 修复移动端活动多选、专注滚动、教程遮挡和壁纸预览 |
 | `v0.6.0` | 2026-11-23 | 活动草稿、多选批处理、离线教程、全局分类、分类迁移和专注 MVP |
 | `v0.5.2` | 2026-11-22 | 回顾直达与范围导出、顶栏添加按钮清理、12 月年度迁移和回顾清理 |
 | `v0.5.1` | 2026-11-22 | 每日回顾、回顾提醒与跨年回顾册、打卡历史只读、待办文案修正、备份 v5 |
@@ -43,12 +44,13 @@
 - `node --test`：74 项通过。
 - `node --check` 与统一版本检查：通过。
 - Android `testDebugUnitTest` 与 Java 编译：通过。
-- Android Debug/Release 构建：通过，`versionCode=10`、`versionName=0.6.0`。
+- Android Debug/Release 构建：通过，`versionCode=11`、`versionName=0.6.1`。
 - Release APK：v2 签名通过，证书 SHA-256 仍为 `81af0bc6dad4481ca886befff7e4dd5d87e5fde9e3ec6c7a4fe24a686f91b1ab`。
-- Release APK SHA-256：`1F07C331B27AB30CF0BB44EA33E343967CC4E837D5EA22EA6954637EEF7C7104`。
+- Release APK SHA-256：`53554B8F16DC8957D5D45F4C274EF782DB095064D8D6BC239846B47704F69BEB`。
 - Release 权限：INTERNET、VIBRATE、RECEIVE_BOOT_COMPLETED、WAKE_LOCK、POST_NOTIFICATIONS、SCHEDULE_EXACT_ALARM；另有 AndroidX 生成的包内动态接收器权限。
-- 无头 Edge 390×844：原有活动/打卡/回顾流程及三类草稿、多选归类、教程、六项导航、专注流程和壁纸导入通过；390 和 320 宽度无横向溢出。
-- Android 模拟器：v0.5.2 覆盖安装 v0.6.0 后账户、登录状态、活动和活动安排保留；旧分类清空、活动转为未分类。
+- 无头 Edge 390×844：活动工具栏与批量按钮等宽等高、教程完整落在视口内、专注页可滚动、壁纸缩略图和预览成功解码；320 宽度无横向溢出。
+- Android 模拟器：v0.6.0 覆盖安装 v0.6.1 后账户、活动和专注累计保留；新增壁纸上传与预览正常。
+- Android 模拟器布局回查：三枚活动按钮同行等宽、教程标签完整、专注页可滚动、壁纸预览按运行页比例显示。
 - Android 专注：原生沉浸模式、自动暂停、继续/结束确认和实际 1 分钟累计通过；最终固定 APK 可继续同签名覆盖安装。
 - 自动测试：迁移候选包含暂停项目、排除待办和手动归档；确认后次年副本恢复排程并清空打卡历史。
 - 自动测试：12 月 1 日 09:00 生成一次普通迁移通知，12 月 1 日后不补发通知。
@@ -449,7 +451,7 @@ newStart < existingEnd && newEnd > existingStart
 {
   "format": "daily-route-backup",
   "version": 6,
-  "appVersion": "0.6.0",
+  "appVersion": "0.6.1",
   "exportedAt": "ISO timestamp",
   "eventCount": 0,
   "yearMigrationCompletedFor": 2026,
@@ -517,8 +519,8 @@ newStart < existingEnd && newEnd > existingStart
 ## Android 工程与构建
 
 - 包名：`com.snowwind114.dailyroute`
-- `versionCode`：10
-- `versionName`：0.6.0
+- `versionCode`：11
+- `versionName`：0.6.1
 - JDK：`E:\Android\Android Studio\jbr`
 - SDK：`C:\Users\Administrator\AppData\Local\Android\Sdk`
 - Gradle：8.14.3

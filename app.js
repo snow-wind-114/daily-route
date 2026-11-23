@@ -171,8 +171,8 @@ import {
   migrationTargetYear as getMigrationTargetYear,
 } from "./year-migration.js";
 
-const APP_VERSION = "0.6.0";
-const APP_VERSION_CODE = 10;
+const APP_VERSION = "0.6.1";
+const APP_VERSION_CODE = 11;
 const SLOT_HEIGHT = 44;
 const PIXELS_PER_MINUTE = SLOT_HEIGHT / 30;
 const nativeApp = isNativeApp();
@@ -585,6 +585,13 @@ const elements = {
   focusQuoteList: document.querySelector("#focusQuoteList"),
   focusWallpaperInput: document.querySelector("#focusWallpaperInput"),
   focusWallpaperList: document.querySelector("#focusWallpaperList"),
+  focusWallpaperPreview: document.querySelector("#focusWallpaperPreview"),
+  focusWallpaperPreviewImage: document.querySelector(
+    "#focusWallpaperPreviewImage",
+  ),
+  focusWallpaperPreviewName: document.querySelector(
+    "#focusWallpaperPreviewName",
+  ),
 };
 
 const initialData = loadInitialData();
@@ -599,6 +606,7 @@ const state = {
   focusQuotes: initialData.focusQuotes,
   focusWallpapers: initialData.focusWallpapers,
   focusPassword: initialData.focusPassword,
+  previewFocusWallpaperId: null,
   account: initialData.account,
   authenticated: initialData.authenticated,
   storageCorrupt: initialData.storageCorrupt,
@@ -2657,6 +2665,38 @@ function blobToDataUrl(blob) {
   });
 }
 
+async function showFocusWallpaperPreview(wallpaper) {
+  if (!wallpaper) {
+    state.previewFocusWallpaperId = null;
+    elements.focusWallpaperPreview.hidden = true;
+    elements.focusWallpaperPreviewImage.removeAttribute("src");
+    elements.focusWallpaperPreviewName.textContent = "";
+    return;
+  }
+  state.previewFocusWallpaperId = wallpaper.id;
+  try {
+    const blob = await readWallpaperAsset(wallpaper.id);
+    if (
+      !blob ||
+      state.previewFocusWallpaperId !== wallpaper.id
+    ) {
+      return;
+    }
+    const url = await blobToDataUrl(blob);
+    if (state.previewFocusWallpaperId !== wallpaper.id) {
+      return;
+    }
+    elements.focusWallpaperPreviewImage.src = url;
+    elements.focusWallpaperPreviewName.textContent = wallpaper.name;
+    elements.focusWallpaperPreview.hidden = false;
+  } catch {
+    if (state.previewFocusWallpaperId === wallpaper.id) {
+      elements.focusWallpaperPreview.hidden = true;
+      showToast("壁纸预览加载失败，请重新添加图片");
+    }
+  }
+}
+
 function renderFocusWallpapers() {
   const fragment = document.createDocumentFragment();
   if (state.focusWallpapers.length === 0) {
@@ -2666,12 +2706,31 @@ function renderFocusWallpapers() {
   }
   for (const wallpaper of state.focusWallpapers) {
     const row = document.createElement("div");
-    const image = document.createElement("span");
+    const open = document.createElement("button");
+    const image = document.createElement("img");
     const name = document.createElement("span");
     const remove = document.createElement("button");
     row.className = "focus-wallpaper-row";
+    row.classList.toggle(
+      "is-previewing",
+      state.previewFocusWallpaperId === wallpaper.id,
+    );
+    open.type = "button";
+    open.className = "focus-wallpaper-open";
+    open.setAttribute("aria-label", `预览壁纸 ${wallpaper.name}`);
     image.className = "focus-wallpaper-thumb";
+    image.alt = "";
     name.textContent = wallpaper.name;
+    open.append(image, name);
+    open.addEventListener("click", () => {
+      void showFocusWallpaperPreview(wallpaper);
+      for (const item of elements.focusWallpaperList.querySelectorAll(
+        ".focus-wallpaper-row",
+      )) {
+        item.classList.remove("is-previewing");
+      }
+      row.classList.add("is-previewing");
+    });
     remove.type = "button";
     remove.className = "activity-delete";
     remove.textContent = "删除";
@@ -2680,10 +2739,13 @@ function renderFocusWallpapers() {
       state.focusWallpapers = state.focusWallpapers.filter(
         (item) => item.id !== wallpaper.id,
       );
+      if (state.previewFocusWallpaperId === wallpaper.id) {
+        state.previewFocusWallpaperId = null;
+      }
       persistEvents();
       renderFocus();
     });
-    row.append(image, name, remove);
+    row.append(open, remove);
     fragment.append(row);
     void readWallpaperAsset(wallpaper.id)
       .then(async (blob) => {
@@ -2691,11 +2753,20 @@ function renderFocusWallpapers() {
           return;
         }
         const url = await blobToDataUrl(blob);
-        image.style.backgroundImage = `url("${url}")`;
+        image.src = url;
       })
       .catch(() => {});
   }
   elements.focusWallpaperList.replaceChildren(fragment);
+  const preview =
+    state.focusWallpapers.find(
+      (item) => item.id === state.previewFocusWallpaperId,
+    ) ?? state.focusWallpapers.at(-1) ?? null;
+  if (preview) {
+    void showFocusWallpaperPreview(preview);
+  } else {
+    void showFocusWallpaperPreview(null);
+  }
 }
 
 function renderFocus() {
@@ -3083,6 +3154,7 @@ async function handleFocusWallpaperUpload(event) {
       name: file.name.slice(0, 80) || "专注壁纸",
       createdAt: new Date().toISOString(),
     });
+    state.previewFocusWallpaperId = id;
     persistEvents();
     renderFocus();
     showToast("壁纸已添加到本机专注库");

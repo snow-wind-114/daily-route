@@ -180,6 +180,15 @@ const result = await evaluate(`(async () => {
 
   document.querySelector("#helpButton").click();
   const tutorialOpen = document.querySelector("#tutorialDialog").open;
+  const tutorialSheetRect = document
+    .querySelector(".tutorial-sheet")
+    .getBoundingClientRect();
+  const tutorialBoundsVisible =
+    tutorialSheetRect.top >= 0 &&
+    tutorialSheetRect.bottom <= innerHeight;
+  const tutorialTopicsFit =
+    document.querySelector("#tutorialTopicList").scrollWidth <=
+    document.querySelector("#tutorialTopicList").clientWidth;
   const tutorialTopics = document.querySelectorAll(
     "#tutorialTopicList button",
   ).length;
@@ -190,6 +199,20 @@ const result = await evaluate(`(async () => {
 
   document.querySelector("#activityNavButton").click();
   await wait();
+  const toolbarButtons = [
+    document.querySelector("#manageCategoriesButton"),
+    document.querySelector("#activitySelectModeButton"),
+    document.querySelector("#archiveToggleButton"),
+  ].map((button) => button.getBoundingClientRect());
+  const toolbarButtonsAligned =
+    toolbarButtons.every(
+      (rect) =>
+        Math.abs(rect.top - toolbarButtons[0].top) < 1 &&
+        Math.abs(rect.height - toolbarButtons[0].height) < 1,
+    ) &&
+    Math.max(...toolbarButtons.map((rect) => rect.width)) -
+      Math.min(...toolbarButtons.map((rect) => rect.width)) <
+      1;
   document.querySelector("#manageCategoriesButton").click();
   document.querySelector("#newCategoryName").value = "学习";
   document.querySelector("#addCategoryButton").click();
@@ -201,6 +224,20 @@ const result = await evaluate(`(async () => {
   document.querySelector("#selectAllActivitiesButton").click();
   await wait();
   const selectedCount = document.querySelector("#bulkSelectionCount").textContent;
+  const bulkButtons = [
+    document.querySelector("#selectAllActivitiesButton"),
+    document.querySelector("#clearActivitySelectionButton"),
+    document.querySelector("#openBulkActionsButton"),
+  ].map((button) => button.getBoundingClientRect());
+  const bulkButtonsAligned =
+    bulkButtons.every(
+      (rect) =>
+        Math.abs(rect.top - bulkButtons[0].top) < 1 &&
+        Math.abs(rect.height - bulkButtons[0].height) < 1,
+    ) &&
+    Math.max(...bulkButtons.map((rect) => rect.width)) -
+      Math.min(...bulkButtons.map((rect) => rect.width)) <
+      1;
   document.querySelector("#openBulkActionsButton").click();
   const pauseDisabledForMixed = document.querySelector("#bulkPauseButton").disabled;
   document.querySelector("#bulkCategorizeButton").click();
@@ -264,7 +301,18 @@ const result = await evaluate(`(async () => {
   const wallpaperInput = document.querySelector("#focusWallpaperInput");
   wallpaperInput.files = transfer.files;
   wallpaperInput.dispatchEvent(new Event("change", { bubbles: true }));
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  const wallpaperPreviewVisible =
+    !document.querySelector("#focusWallpaperPreview").hidden &&
+    document.querySelector("#focusWallpaperPreviewImage").naturalWidth > 0;
+  const focusView = document.querySelector("#focusView");
+  const focusOverflowY = getComputedStyle(focusView).overflowY;
+  focusView.scrollTop = focusView.scrollHeight;
+  const focusCanScroll =
+    focusView.scrollHeight > focusView.clientHeight &&
+    focusView.scrollTop > 0;
+  const focusNoHorizontalOverflow =
+    focusView.scrollWidth <= focusView.clientWidth;
 
   document.documentElement.requestFullscreen = async () => {};
   document.exitFullscreen = async () => {};
@@ -285,6 +333,10 @@ const result = await evaluate(`(async () => {
     tutorialOpen,
     tutorialTopics,
     tutorialMentionsPause,
+    tutorialBoundsVisible,
+    tutorialTopicsFit,
+    toolbarButtonsAligned,
+    bulkButtonsAligned,
     selectedCount,
     pauseDisabledForMixed,
     allCategorized,
@@ -292,6 +344,10 @@ const result = await evaluate(`(async () => {
     focusFlows: stored.focusFlows.length,
     focusQuotes: stored.focusQuotes.length,
     focusWallpapers: stored.focusWallpapers.length,
+    wallpaperPreviewVisible,
+    focusOverflowY,
+    focusCanScroll,
+    focusNoHorizontalOverflow,
     flowSteps,
     runnerVisible,
     exitDialogOpen,
@@ -332,6 +388,10 @@ if (
   !result.tutorialOpen ||
   result.tutorialTopics !== 7 ||
   !result.tutorialMentionsPause ||
+  !result.tutorialBoundsVisible ||
+  !result.tutorialTopicsFit ||
+  !result.toolbarButtonsAligned ||
+  !result.bulkButtonsAligned ||
   result.selectedCount !== "已选 3 项" ||
   !result.pauseDisabledForMixed ||
   !result.allCategorized ||
@@ -339,6 +399,10 @@ if (
   result.focusFlows !== 1 ||
   result.focusQuotes !== 1 ||
   result.focusWallpapers !== 1 ||
+  !result.wallpaperPreviewVisible ||
+  result.focusOverflowY !== "auto" ||
+  !result.focusCanScroll ||
+  !result.focusNoHorizontalOverflow ||
   result.flowSteps !== 2 ||
   !result.runnerVisible ||
   !result.exitDialogOpen ||

@@ -214,6 +214,7 @@ svg {
 .day-view,
 .week-view,
 .month-view,
+.focus-view,
 .review-view,
 .activity-view {
   width: 100%;
@@ -2733,7 +2734,8 @@ svg {
   position: sticky;
   z-index: 4;
   top: 36px;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
   gap: 8px;
   margin: -6px 0 16px;
@@ -2745,20 +2747,27 @@ svg {
 }
 
 .bulk-selection-bar strong {
-  margin-right: auto;
+  grid-column: 1 / -1;
+  margin: 0;
   color: #47556b;
   font-size: 12px;
 }
 
 .bulk-selection-bar .text-button {
-  padding: 4px;
-  font-size: 11px;
+  min-height: 38px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: #fff;
+  color: #56647a;
+  font-size: 12px;
 }
 
 .bulk-selection-bar .primary-button {
-  min-height: 36px;
-  padding: 0 11px;
-  font-size: 11px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 8px;
+  font-size: 12px;
 }
 
 .bulk-action-grid {
@@ -2798,13 +2807,23 @@ svg {
 
 .tutorial-dialog {
   width: min(calc(100% - 24px), 860px);
+  max-height: calc(
+    100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px
+  );
   margin: auto;
 }
 
 .tutorial-sheet {
   display: grid;
-  max-height: min(86dvh, 760px);
+  height: min(
+    760px,
+    calc(
+      100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 28px
+    )
+  );
+  max-height: 100%;
   grid-template-columns: 210px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 0;
   overflow: hidden;
   border-radius: 22px;
@@ -2813,10 +2832,12 @@ svg {
 
 .tutorial-sheet > .account-header {
   grid-column: 1 / -1;
+  padding: 18px 18px 12px;
 }
 
 .tutorial-topic-list {
   display: flex;
+  min-height: 0;
   flex-direction: column;
   gap: 4px;
   overflow-y: auto;
@@ -2842,8 +2863,11 @@ svg {
 }
 
 .tutorial-article {
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px 22px 28px;
+  overscroll-behavior: contain;
 }
 
 .tutorial-article h3 {
@@ -2869,7 +2893,9 @@ svg {
 }
 
 .focus-view {
-  padding-top: 4px;
+  overflow-y: auto;
+  padding: 14px 18px calc(94px + env(safe-area-inset-bottom));
+  overscroll-behavior: contain;
 }
 
 .focus-summary-card {
@@ -3024,8 +3050,7 @@ svg {
   font-size: 12px;
 }
 
-.focus-library-row span,
-.focus-wallpaper-row > span:nth-child(2) {
+.focus-library-row span {
   min-width: 0;
   flex: 1;
 }
@@ -3048,11 +3073,80 @@ svg {
 }
 
 .focus-wallpaper-thumb {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
+  display: block;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 56px;
+  border-radius: 9px;
+  background: #e8edf4;
+  object-fit: cover;
+}
+
+.focus-wallpaper-preview {
+  margin: 0 0 12px;
+  overflow: hidden;
+  border: 1px solid #dbe3ee;
   border-radius: 8px;
-  background: #edf0f4 center / cover;
+  background: #fff;
+}
+
+.focus-wallpaper-preview img {
+  display: block;
+  width: 100%;
+  max-height: 380px;
+  aspect-ratio: 9 / 14;
+  background: #eef1f5;
+  object-fit: cover;
+}
+
+.focus-wallpaper-preview > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+}
+
+.focus-wallpaper-preview strong {
+  overflow: hidden;
+  color: #49576b;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-wallpaper-preview span {
+  color: #8a95a6;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.focus-wallpaper-open {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: #59667a;
+  text-align: left;
+}
+
+.focus-wallpaper-open span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-wallpaper-row.is-previewing {
+  color: var(--accent);
+}
+
+.focus-wallpaper-row.is-previewing .focus-wallpaper-open span {
+  color: var(--accent);
+  font-weight: 650;
 }
 
 .focus-form-fields {
@@ -3239,40 +3333,67 @@ body.focus-running {
 
 @media (max-width: 520px) {
   .activity-toolbar {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .activity-toolbar select {
     grid-column: 1 / -1;
   }
 
-  .bulk-selection-bar {
-    flex-wrap: wrap;
+  .activity-toolbar .secondary-button {
+    width: 100%;
+    padding-right: 5px;
+    padding-left: 5px;
+    font-size: 11px;
   }
 
-  .bulk-selection-bar strong {
-    flex-basis: 100%;
+  .bulk-selection-bar {
+    top: 30px;
+    gap: 6px;
+    padding: 9px;
+  }
+
+  .bulk-selection-bar .text-button,
+  .bulk-selection-bar .primary-button {
+    min-height: 36px;
+    padding-right: 4px;
+    padding-left: 4px;
+    font-size: 11px;
   }
 
   .tutorial-sheet {
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    height: calc(
+      100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px
+    );
+  }
+
+  .tutorial-sheet > .account-header {
+    padding: 16px 16px 10px;
   }
 
   .tutorial-topic-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
     max-height: 180px;
-    flex-direction: row;
-    overflow-x: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 9px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
 
   .tutorial-topic-list button {
-    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 7px 8px;
     white-space: nowrap;
+    text-align: center;
   }
 
   .tutorial-article {
-    padding: 8px 17px 24px;
+    padding: 8px 17px calc(24px + env(safe-area-inset-bottom));
   }
 
   .focus-project-row,

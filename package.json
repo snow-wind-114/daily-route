@@ -1,13 +1,13 @@
 {
   "name": "daily-route",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "type": "module",
   "packageManager": "npm@12.2.2",
   "scripts": {
     "test": "node --test",
     "check": "node --check app.js && node --check activities.js && node --check account.js && node --check alarm-scheduler.js && node --check app-state.js && node --check backup.js && node --check date-utils.js && node --check drafts.js && node --check focus-assets.js && node --check focus.js && node --check native-files.js && node --check native-widget.js && node --check notifications.js && node --check recovery.js && node --check review.js && node --check schedule.js && node --check tutorial.js && node --check update-check.js && node --check year-migration.js && node --check sw.js && node scripts/check-versions.mjs",
-    "test:browser": "node scripts/browser-smoke.mjs && node scripts/v060-browser-smoke.mjs",
+    "test:browser": "node scripts/browser-smoke.mjs && node scripts/v061-browser-smoke.mjs",
     "build:web": "node scripts/prepare-android-web.mjs",
     "cap:sync": "npm run build:web && node node_modules/@capacitor/cli/bin/capacitor sync android",
     "android:open": "npm run cap:sync && node node_modules/@capacitor/cli/bin/capacitor open android",
