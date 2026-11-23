@@ -1,14 +1,16 @@
 {
-  "versionCode": 9,
-  "versionName": "0.5.2",
+  "versionCode": 10,
+  "versionName": "0.6.0",
   "apkUrl": "https://github.com/snow-wind-114/daily-route/releases/latest/download/daily-route.apk",
-  "releaseUrl": "https://github.com/snow-wind-114/daily-route/releases/tag/v0.5.2",
+  "releaseUrl": "https://github.com/snow-wind-114/daily-route/releases/tag/v0.6.0",
   "notes": [
-    "日期页新增对应日期的回顾直达入口",
-    "回顾页支持导出本周、本月和本年度 Markdown 回顾册",
-    "删除顶栏重复的添加按钮，保留右下角浮动按钮",
-    "安卓从 12 月起选择需要保留到下一年的定期和打卡项目",
-    "选中项目确认后立即加入下一年，暂停项目次年恢复",
-    "跨年时提示导出或确认删除旧回顾"
+    "新建定期、待办和打卡表单支持独立自动草稿",
+    "活动页支持按当前筛选结果多选并批量归类、暂停、归档或删除",
+    "分类升级为三类活动共用的全局分类，旧分类按 v0.6 规则自动清空",
+    "年度迁移可按分类选择要保留到下年的定期和打卡项目",
+    "新增离线使用教程和六项底部导航",
+    "新增单次项目、周期专注、沉浸计时、专注密码、语句库和本地壁纸库",
+    "专注离开应用会自动暂停，不申请强制锁机或白名单敏感权限",
+    "存储与 JSON 备份升级到 v6，兼容旧备份并排除专注密码和壁纸二进制"
   ]
 }

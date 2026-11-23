@@ -37,6 +37,44 @@ export function migrationCandidates(events, targetYear) {
     );
 }
 
+export function migrationCategoryGroups(
+  events,
+  categories,
+  targetYear,
+) {
+  const candidates = migrationCandidates(events, targetYear);
+  const categoryMap = new Map(
+    categories.map((category) => [category.id, category.name]),
+  );
+  const groups = new Map();
+  for (const activity of candidates) {
+    const key =
+      activity.categoryId && categoryMap.has(activity.categoryId)
+        ? activity.categoryId
+        : "";
+    if (!groups.has(key)) {
+      groups.set(key, {
+        categoryId: key || null,
+        categoryName: key ? categoryMap.get(key) : "未分类",
+        activities: [],
+      });
+    }
+    groups.get(key).activities.push(activity);
+  }
+  return [...groups.values()].sort((left, right) => {
+    if (left.categoryId === null) {
+      return 1;
+    }
+    if (right.categoryId === null) {
+      return -1;
+    }
+    return left.categoryName.localeCompare(
+      right.categoryName,
+      "zh-CN",
+    );
+  });
+}
+
 export function buildMigrationCopies(
   events,
   selectedIds,

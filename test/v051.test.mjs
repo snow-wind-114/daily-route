@@ -8,7 +8,7 @@ import {
 } from "../activities.js";
 import {
   NATIVE_STORAGE_KEY,
-  PREVIOUS_NATIVE_STORAGE_KEY,
+  PREVIOUS_PREVIOUS_NATIVE_STORAGE_KEY,
   migrateNativeState,
 } from "../app-state.js";
 import { createLocalAccount } from "../account.js";
@@ -191,14 +191,14 @@ test("markdown review book includes only written days and frozen facts", () => {
   assert.doesNotMatch(markdown, /2026年11月21日/);
 });
 
-test("v4 storage migrates to v5 with default review settings", async () => {
+test("v4 storage migrates to v6 with default review and focus settings", async () => {
   const storage = memoryStorage();
   const account = await createLocalAccount(
     { username: "小风", password: "secret123" },
     { iterations: 1000 },
   );
   storage.setItem(
-    PREVIOUS_NATIVE_STORAGE_KEY,
+    PREVIOUS_PREVIOUS_NATIVE_STORAGE_KEY,
     JSON.stringify({
       version: 4,
       account,
@@ -215,11 +215,13 @@ test("v4 storage migrates to v5 with default review settings", async () => {
     enabled: false,
     time: "21:30",
   });
+  assert.deepEqual(migrated.state.categories, []);
+  assert.deepEqual(migrated.state.focusProjects, []);
   assert.ok(storage.getItem(NATIVE_STORAGE_KEY));
-  assert.equal(JSON.parse(storage.getItem(NATIVE_STORAGE_KEY)).version, 5);
+  assert.equal(JSON.parse(storage.getItem(NATIVE_STORAGE_KEY)).version, 6);
 });
 
-test("backup v5 round-trips review text and reminder without credentials", () => {
+test("backup v6 round-trips review text and reminder without credentials", () => {
   const reviewEntries = [review("2026-11-22", "今天完成了复习")];
   const backup = createBackup([], {
     reviewEntries,
@@ -228,7 +230,7 @@ test("backup v5 round-trips review text and reminder without credentials", () =>
   });
   const text = JSON.stringify(backup);
   const parsed = parseBackup(text);
-  assert.equal(parsed.version, 5);
+  assert.equal(parsed.version, 6);
   assert.equal(parsed.reviewCount, 1);
   assert.equal(parsed.reviewEntries[0].summary, "今天完成了复习");
   assert.equal(parsed.reviewReminder.time, "22:00");

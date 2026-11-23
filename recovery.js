@@ -3,6 +3,10 @@ import {
   normalizeCategories,
 } from "./activities.js";
 import {
+  emptyFocusState,
+  normalizeFocusState,
+} from "./focus.js";
+import {
   normalizeReviewEntries,
   normalizeReviewReminder,
   removeReviewsBeforeYear,
@@ -32,19 +36,29 @@ export function readRecoveryPoints(storage = localStorage) {
       if (!point || !Array.isArray(point.events)) {
         return null;
       }
+      const hasCurrentCategories = Array.isArray(point.categories);
+      const categories = hasCurrentCategories
+        ? normalizeCategories(point.categories)
+        : [];
+      const events = normalizeActivities(point.events).map((activity) =>
+        hasCurrentCategories
+          ? activity
+          : { ...activity, categoryId: null },
+      );
       return {
         id: String(point.id ?? ""),
         createdAt:
           typeof point.createdAt === "string" ? point.createdAt : "",
         reason: typeof point.reason === "string" ? point.reason : "自动恢复点",
-        events: normalizeActivities(point.events),
-        categories: normalizeCategories(point.categories),
+        events,
+        categories,
         yearMigrationCompletedFor: Number(
           point.yearMigrationCompletedFor ??
             new Date(point.createdAt).getFullYear(),
         ),
         reviewEntries: normalizeReviewEntries(point.reviewEntries),
         reviewReminder: normalizeReviewReminder(point.reviewReminder),
+        ...normalizeFocusState(point),
       };
     })
     .filter((point) => point?.id && point.createdAt);
@@ -62,15 +76,21 @@ export function addRecoveryPoint(
         yearMigrationCompletedFor: now.getFullYear(),
         reviewEntries: [],
         reviewReminder: normalizeReviewReminder(),
+        ...emptyFocusState(),
       }
     : stateOrEvents;
   const normalizedEvents = normalizeActivities(state.events);
   const normalizedCategories = normalizeCategories(state.categories);
   const normalizedReviews = normalizeReviewEntries(state.reviewEntries);
+  const normalizedFocus = normalizeFocusState(state);
   const signature = JSON.stringify({
     events: normalizedEvents,
     categories: normalizedCategories,
     reviewEntries: normalizedReviews,
+    focusProjects: normalizedFocus.focusProjects,
+    focusFlows: normalizedFocus.focusFlows,
+    focusQuotes: normalizedFocus.focusQuotes,
+    focusWallpapers: normalizedFocus.focusWallpapers,
   });
   const current = readRecoveryPoints(storage);
   const currentSignature = current[0]
@@ -78,6 +98,10 @@ export function addRecoveryPoint(
         events: current[0].events,
         categories: current[0].categories,
         reviewEntries: current[0].reviewEntries,
+        focusProjects: current[0].focusProjects,
+        focusFlows: current[0].focusFlows,
+        focusQuotes: current[0].focusQuotes,
+        focusWallpapers: current[0].focusWallpapers,
       })
     : null;
   if (currentSignature === signature) {
@@ -95,6 +119,7 @@ export function addRecoveryPoint(
     ),
     reviewEntries: normalizedReviews,
     reviewReminder: normalizeReviewReminder(state.reviewReminder),
+    ...normalizedFocus,
   };
   const updated = [point, ...current].slice(0, MAX_RECOVERY_POINTS);
   storage.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(updated));

@@ -170,40 +170,33 @@ export function normalizeActivities(rawActivities) {
 }
 
 export function emptyCategories() {
-  return {
-    schedule: [],
-    todo: [],
-    checkin: [],
-  };
+  return [];
 }
 
 export function normalizeCategories(raw) {
-  const categories = emptyCategories();
-  for (const kind of ACTIVITY_KINDS) {
-    const seenIds = new Set();
-    const seenNames = new Set();
-    for (const item of Array.isArray(raw?.[kind]) ? raw[kind] : []) {
-      const name = cleanText(item?.name, 24);
-      const id = typeof item?.id === "string" && item.id ? item.id : createId();
-      const normalizedName = name.toLocaleLowerCase("zh-CN");
-      if (!name || seenIds.has(id) || seenNames.has(normalizedName)) {
-        continue;
-      }
-      seenIds.add(id);
-      seenNames.add(normalizedName);
-      categories[kind].push({ id, name });
+  const categories = [];
+  const seenIds = new Set();
+  const seenNames = new Set();
+  for (const item of Array.isArray(raw) ? raw : []) {
+    const name = cleanText(item?.name, 24);
+    const id = typeof item?.id === "string" && item.id ? item.id : createId();
+    const normalizedName = name.toLocaleLowerCase("zh-CN");
+    if (!name || seenIds.has(id) || seenNames.has(normalizedName)) {
+      continue;
     }
+    seenIds.add(id);
+    seenNames.add(normalizedName);
+    categories.push({ id, name });
   }
   return categories;
 }
 
-export function addCategory(categories, kind, name) {
+export function addCategory(categories, name) {
   const normalized = normalizeCategories(categories);
   const cleanName = cleanText(name, 24);
   if (
-    !ACTIVITY_KINDS.includes(kind) ||
     !cleanName ||
-    normalized[kind].some(
+    normalized.some(
       (item) =>
         item.name.toLocaleLowerCase("zh-CN") ===
         cleanName.toLocaleLowerCase("zh-CN"),
@@ -211,33 +204,39 @@ export function addCategory(categories, kind, name) {
   ) {
     return normalized;
   }
-  normalized[kind].push({ id: createId(), name: cleanName });
+  normalized.push({ id: createId(), name: cleanName });
   return normalized;
 }
 
-export function renameCategory(categories, kind, categoryId, name) {
+export function renameCategory(categories, categoryId, name) {
   const normalized = normalizeCategories(categories);
   const cleanName = cleanText(name, 24);
-  if (!cleanName) {
+  if (
+    !cleanName ||
+    normalized.some(
+      (item) =>
+        item.id !== categoryId &&
+        item.name.toLocaleLowerCase("zh-CN") ===
+          cleanName.toLocaleLowerCase("zh-CN"),
+    )
+  ) {
     return normalized;
   }
-  normalized[kind] = normalized[kind].map((item) =>
+  return normalized.map((item) =>
     item.id === categoryId ? { ...item, name: cleanName } : item,
   );
-  return normalized;
 }
 
-export function deleteCategory(categories, kind, categoryId) {
+export function deleteCategory(categories, categoryId) {
   const normalized = normalizeCategories(categories);
-  normalized[kind] = normalized[kind].filter(
+  return normalized.filter(
     (item) => item.id !== categoryId,
   );
-  return normalized;
 }
 
-export function categoryName(categories, kind, categoryId) {
+export function categoryName(categories, categoryId) {
   return (
-    categories?.[kind]?.find((item) => item.id === categoryId)?.name ??
+    categories?.find((item) => item.id === categoryId)?.name ??
     "未分类"
   );
 }

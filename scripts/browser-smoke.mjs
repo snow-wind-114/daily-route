@@ -31,7 +31,9 @@ socket.addEventListener("message", (event) => {
   }
   if (message.method === "Runtime.exceptionThrown") {
     exceptions.push(
-      message.params.exceptionDetails?.text ?? "未知页面异常",
+      message.params.exceptionDetails?.exception?.description ??
+        message.params.exceptionDetails?.text ??
+        "未知页面异常",
     );
   }
 });
@@ -67,8 +69,18 @@ await send("Emulation.setDeviceMetricsOverride", {
   deviceScaleFactor: 1,
   mobile: true,
 });
+await evaluate(`(async () => {
+  localStorage.removeItem("daily-route.storage.v1");
+  localStorage.removeItem("daily-route.activity-drafts.v1");
+  localStorage.removeItem("daily-route.focus-session.v1");
+  const registrations = await navigator.serviceWorker?.getRegistrations?.() ?? [];
+  await Promise.all(registrations.map((registration) => registration.unregister()));
+  const keys = await caches?.keys?.() ?? [];
+  await Promise.all(keys.map((key) => caches.delete(key)));
+  return true;
+})()`);
 await evaluate(
-  `localStorage.removeItem("daily-route.storage.v1"); location.reload(); true`,
+  `location.replace(location.pathname + "?smoke=" + Date.now()); true`,
 );
 await new Promise((resolve) => setTimeout(resolve, 900));
 
@@ -376,7 +388,8 @@ if (
   !result.archivedDuringRestore ||
   result.archivedAfterRestoreSave !== null ||
   !result.archiveIncludesTodo ||
-  result.categories.schedule.length !== 1 ||
+  result.categories.length !== 1 ||
+  result.categories[0]?.name !== "学习" ||
   result.documentWidth > result.viewportWidth ||
   exceptions.length > 0
 ) {

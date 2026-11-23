@@ -97,6 +97,40 @@ import {
   syncScheduledNotifications,
 } from "./notifications.js";
 import {
+  clearActivityDrafts,
+  mostRecentDraft,
+  readActivityDrafts,
+  removeActivityDraft,
+  writeActivityDraft,
+  ACTIVITY_DRAFT_KINDS,
+} from "./drafts.js";
+import {
+  addFocusProjectTime,
+  clearFocusSession,
+  createFocusPassword,
+  createFocusRun,
+  emptyFocusState,
+  focusFlowDurationMinutes,
+  focusFlowFromInput,
+  focusProjectFromInput,
+  focusTotalSeconds,
+  normalizeFocusSession,
+  projectsReferencingFlow,
+  readFocusSession,
+  validateFocusFlowInput,
+  validateFocusPassword,
+  validateFocusProjectInput,
+  verifyFocusPassword,
+  writeFocusSession,
+} from "./focus.js";
+import {
+  compressWallpaper,
+  deleteWallpaperAsset,
+  clearWallpaperAssets,
+  readWallpaperAsset,
+  saveWallpaperAsset,
+} from "./focus-assets.js";
+import {
   shareNativeBackup,
   shareNativeTextFile,
 } from "./native-files.js";
@@ -121,6 +155,7 @@ import {
   reviewEntriesInRange,
   reviewRangeFor,
 } from "./review.js";
+import { TUTORIAL_TOPICS } from "./tutorial.js";
 import { checkForUpdate } from "./update-check.js";
 import {
   clearNativeWidgetSnapshot,
@@ -130,13 +165,14 @@ import {
 } from "./native-widget.js";
 import {
   buildMigrationCopies,
+  migrationCategoryGroups,
   migrationCandidates,
   migrationIsDue as migrationWindowIsDue,
   migrationTargetYear as getMigrationTargetYear,
 } from "./year-migration.js";
 
-const APP_VERSION = "0.5.2";
-const APP_VERSION_CODE = 9;
+const APP_VERSION = "0.6.0";
+const APP_VERSION_CODE = 10;
 const SLOT_HEIGHT = 44;
 const PIXELS_PER_MINUTE = SLOT_HEIGHT / 30;
 const nativeApp = isNativeApp();
@@ -167,10 +203,12 @@ const elements = {
   weekView: document.querySelector("#weekView"),
   monthView: document.querySelector("#monthView"),
   activityView: document.querySelector("#activityView"),
+  focusView: document.querySelector("#focusView"),
   reviewView: document.querySelector("#reviewView"),
   dayNavButton: document.querySelector("#dayNavButton"),
   weekNavButton: document.querySelector("#weekNavButton"),
   monthNavButton: document.querySelector("#monthNavButton"),
+  focusNavButton: document.querySelector("#focusNavButton"),
   activityNavButton: document.querySelector("#activityNavButton"),
   reviewNavButton: document.querySelector("#reviewNavButton"),
   previousDayButton: document.querySelector("#previousDayButton"),
@@ -196,7 +234,13 @@ const elements = {
   activitySearch: document.querySelector("#activitySearch"),
   activityCategoryFilter: document.querySelector("#activityCategoryFilter"),
   manageCategoriesButton: document.querySelector("#manageCategoriesButton"),
+  activitySelectModeButton: document.querySelector("#activitySelectModeButton"),
   archiveToggleButton: document.querySelector("#archiveToggleButton"),
+  bulkSelectionBar: document.querySelector("#bulkSelectionBar"),
+  bulkSelectionCount: document.querySelector("#bulkSelectionCount"),
+  selectAllActivitiesButton: document.querySelector("#selectAllActivitiesButton"),
+  clearActivitySelectionButton: document.querySelector("#clearActivitySelectionButton"),
+  openBulkActionsButton: document.querySelector("#openBulkActionsButton"),
   yearMigrationBanner: document.querySelector("#yearMigrationBanner"),
   yearMigrationTitle: document.querySelector("#yearMigrationTitle"),
   yearMigrationMessage: document.querySelector("#yearMigrationMessage"),
@@ -221,13 +265,16 @@ const elements = {
   androidDownloadButton: document.querySelector("#androidDownloadButton"),
   webExportButton: document.querySelector("#webExportButton"),
   accountButton: document.querySelector("#accountButton"),
+  helpButton: document.querySelector("#helpButton"),
   addFab: document.querySelector("#addFab"),
   eventDialog: document.querySelector("#eventDialog"),
   eventForm: document.querySelector("#eventForm"),
   eventDialogKicker: document.querySelector("#eventDialogKicker"),
   eventDialogTitle: document.querySelector("#eventDialogTitle"),
+  eventDraftStatus: document.querySelector("#eventDraftStatus"),
   closeEventDialog: document.querySelector("#closeEventDialog"),
   cancelEventButton: document.querySelector("#cancelEventButton"),
+  discardDraftButton: document.querySelector("#discardDraftButton"),
   activityKindField: document.querySelector("#activityKindField"),
   eventName: document.querySelector("#eventName"),
   activityKindInputs: document.querySelectorAll('input[name="activityKind"]'),
@@ -423,7 +470,6 @@ const elements = {
   ),
   categoryDialog: document.querySelector("#categoryDialog"),
   closeCategoryDialog: document.querySelector("#closeCategoryDialog"),
-  categoryKindSelect: document.querySelector("#categoryKindSelect"),
   categoryList: document.querySelector("#categoryList"),
   newCategoryName: document.querySelector("#newCategoryName"),
   addCategoryButton: document.querySelector("#addCategoryButton"),
@@ -449,6 +495,96 @@ const elements = {
   reviewExportCount: document.querySelector("#reviewExportCount"),
   cancelReviewExportButton: document.querySelector("#cancelReviewExportButton"),
   confirmReviewExportButton: document.querySelector("#confirmReviewExportButton"),
+  bulkDialog: document.querySelector("#bulkDialog"),
+  bulkDialogSummary: document.querySelector("#bulkDialogSummary"),
+  bulkCategorizeButton: document.querySelector("#bulkCategorizeButton"),
+  bulkPauseButton: document.querySelector("#bulkPauseButton"),
+  bulkArchiveButton: document.querySelector("#bulkArchiveButton"),
+  bulkDeleteButton: document.querySelector("#bulkDeleteButton"),
+  cancelBulkDialogButton: document.querySelector("#cancelBulkDialogButton"),
+  bulkCategoryDialog: document.querySelector("#bulkCategoryDialog"),
+  bulkCategorySelect: document.querySelector("#bulkCategorySelect"),
+  cancelBulkCategoryButton: document.querySelector("#cancelBulkCategoryButton"),
+  confirmBulkCategoryButton: document.querySelector("#confirmBulkCategoryButton"),
+  bulkConfirmDialog: document.querySelector("#bulkConfirmDialog"),
+  bulkConfirmTitle: document.querySelector("#bulkConfirmTitle"),
+  bulkConfirmMessage: document.querySelector("#bulkConfirmMessage"),
+  cancelBulkConfirmButton: document.querySelector("#cancelBulkConfirmButton"),
+  confirmBulkActionButton: document.querySelector("#confirmBulkActionButton"),
+  tutorialDialog: document.querySelector("#tutorialDialog"),
+  closeTutorialDialog: document.querySelector("#closeTutorialDialog"),
+  tutorialTopicList: document.querySelector("#tutorialTopicList"),
+  tutorialArticle: document.querySelector("#tutorialArticle"),
+  focusProjectList: document.querySelector("#focusProjectList"),
+  focusFlowList: document.querySelector("#focusFlowList"),
+  focusTotalTime: document.querySelector("#focusTotalTime"),
+  focusPasswordStatus: document.querySelector("#focusPasswordStatus"),
+  configureFocusPasswordButton: document.querySelector("#configureFocusPasswordButton"),
+  addFocusProjectButton: document.querySelector("#addFocusProjectButton"),
+  addFocusFlowButton: document.querySelector("#addFocusFlowButton"),
+  focusProjectDialog: document.querySelector("#focusProjectDialog"),
+  focusProjectForm: document.querySelector("#focusProjectForm"),
+  focusProjectDialogTitle: document.querySelector("#focusProjectDialogTitle"),
+  focusProjectName: document.querySelector("#focusProjectName"),
+  focusProjectTypeInputs: document.querySelectorAll('input[name="focusProjectType"]'),
+  focusProjectMinutes: document.querySelector("#focusProjectMinutes"),
+  focusProjectNotes: document.querySelector("#focusProjectNotes"),
+  focusProjectError: document.querySelector("#focusProjectError"),
+  cancelFocusProjectButton: document.querySelector("#cancelFocusProjectButton"),
+  focusFlowDialog: document.querySelector("#focusFlowDialog"),
+  focusFlowForm: document.querySelector("#focusFlowForm"),
+  focusFlowDialogTitle: document.querySelector("#focusFlowDialogTitle"),
+  focusFlowName: document.querySelector("#focusFlowName"),
+  focusFlowNotes: document.querySelector("#focusFlowNotes"),
+  focusFlowStepSelect: document.querySelector("#focusFlowStepSelect"),
+  focusFlowStepMinutes: document.querySelector("#focusFlowStepMinutes"),
+  addFocusFlowStepButton: document.querySelector("#addFocusFlowStepButton"),
+  focusFlowSteps: document.querySelector("#focusFlowSteps"),
+  focusFlowError: document.querySelector("#focusFlowError"),
+  cancelFocusFlowButton: document.querySelector("#cancelFocusFlowButton"),
+  focusPasswordDialog: document.querySelector("#focusPasswordDialog"),
+  focusPasswordForm: document.querySelector("#focusPasswordForm"),
+  currentFocusPasswordField: document.querySelector("#currentFocusPasswordField"),
+  currentFocusPassword: document.querySelector("#currentFocusPassword"),
+  newFocusPassword: document.querySelector("#newFocusPassword"),
+  confirmFocusPassword: document.querySelector("#confirmFocusPassword"),
+  focusPasswordError: document.querySelector("#focusPasswordError"),
+  clearFocusPasswordButton: document.querySelector("#clearFocusPasswordButton"),
+  cancelFocusPasswordButton: document.querySelector("#cancelFocusPasswordButton"),
+  focusRunner: document.querySelector("#focusRunner"),
+  focusRunnerBackground: document.querySelector("#focusRunnerBackground"),
+  focusRunnerTitle: document.querySelector("#focusRunnerTitle"),
+  focusRunnerStage: document.querySelector("#focusRunnerStage"),
+  focusRunnerQuote: document.querySelector("#focusRunnerQuote"),
+  focusRunnerTime: document.querySelector("#focusRunnerTime"),
+  focusRunnerProgress: document.querySelector("#focusRunnerProgress"),
+  focusRunnerStepLabel: document.querySelector("#focusRunnerStepLabel"),
+  exitFocusButton: document.querySelector("#exitFocusButton"),
+  focusPauseOverlay: document.querySelector("#focusPauseOverlay"),
+  continueFocusButton: document.querySelector("#continueFocusButton"),
+  endPausedFocusButton: document.querySelector("#endPausedFocusButton"),
+  focusExitDialog: document.querySelector("#focusExitDialog"),
+  focusExitPasswordField: document.querySelector("#focusExitPasswordField"),
+  focusExitPassword: document.querySelector("#focusExitPassword"),
+  focusExitError: document.querySelector("#focusExitError"),
+  cancelFocusExitButton: document.querySelector("#cancelFocusExitButton"),
+  confirmFocusExitButton: document.querySelector("#confirmFocusExitButton"),
+  focusPasswordResetDialog: document.querySelector("#focusPasswordResetDialog"),
+  focusPasswordResetMessage: document.querySelector("#focusPasswordResetMessage"),
+  focusPasswordResetLabel: document.querySelector("#focusPasswordResetLabel"),
+  focusPasswordResetInput: document.querySelector("#focusPasswordResetInput"),
+  focusPasswordResetError: document.querySelector("#focusPasswordResetError"),
+  cancelFocusPasswordResetButton: document.querySelector("#cancelFocusPasswordResetButton"),
+  confirmFocusPasswordResetButton: document.querySelector("#confirmFocusPasswordResetButton"),
+  focusSessionDialog: document.querySelector("#focusSessionDialog"),
+  focusSessionMessage: document.querySelector("#focusSessionMessage"),
+  resumeStoredFocusButton: document.querySelector("#resumeStoredFocusButton"),
+  discardStoredFocusButton: document.querySelector("#discardStoredFocusButton"),
+  focusQuoteInput: document.querySelector("#focusQuoteInput"),
+  addFocusQuoteButton: document.querySelector("#addFocusQuoteButton"),
+  focusQuoteList: document.querySelector("#focusQuoteList"),
+  focusWallpaperInput: document.querySelector("#focusWallpaperInput"),
+  focusWallpaperList: document.querySelector("#focusWallpaperList"),
 };
 
 const initialData = loadInitialData();
@@ -458,6 +594,11 @@ const state = {
   yearMigrationCompletedFor: initialData.yearMigrationCompletedFor,
   reviewEntries: initialData.reviewEntries,
   reviewReminder: initialData.reviewReminder,
+  focusProjects: initialData.focusProjects,
+  focusFlows: initialData.focusFlows,
+  focusQuotes: initialData.focusQuotes,
+  focusWallpapers: initialData.focusWallpapers,
+  focusPassword: initialData.focusPassword,
   account: initialData.account,
   authenticated: initialData.authenticated,
   storageCorrupt: initialData.storageCorrupt,
@@ -479,10 +620,16 @@ const state = {
   pendingImportMigrationYear: null,
   pendingImportReviewEntries: null,
   pendingImportReviewReminder: null,
+  pendingImportFocus: null,
   pendingSeriesEdit: null,
   pendingPause: null,
   pendingUpdate: null,
   activityCategoryFilter: "",
+  selectionMode: false,
+  selectedActivityIds: new Set(),
+  visibleActivityIds: [],
+  pendingBulkAction: null,
+  pendingGenericConfirm: null,
   archiveMode: false,
   archiveYear: Number(todayISO().slice(0, 4)),
   checkinCalendarId: null,
@@ -495,6 +642,20 @@ const state = {
   pendingReviewArchiveMode: null,
   reviewExportScope: "week",
   migrationSelections: new Map(),
+  tutorialTopicId: null,
+  activityDrafts: readActivityDrafts(),
+  draftKind: null,
+  draftTouched: false,
+  draftSaveTimer: null,
+  focusTab: "projects",
+  editingFocusProjectId: null,
+  editingFocusFlowId: null,
+  focusFlowDraftSteps: [],
+  focusRun: null,
+  focusTimer: null,
+  focusPausedReason: null,
+  focusAssetUrl: null,
+  focusRunFinished: false,
 };
 
 let toastTimer = null;
@@ -518,6 +679,11 @@ function loadInitialData() {
           loaded.state.yearMigrationCompletedFor,
         reviewEntries: loaded.state.reviewEntries,
         reviewReminder: loaded.state.reviewReminder,
+        focusProjects: loaded.state.focusProjects,
+        focusFlows: loaded.state.focusFlows,
+        focusQuotes: loaded.state.focusQuotes,
+        focusWallpapers: loaded.state.focusWallpapers,
+        focusPassword: loaded.state.focusPassword,
         account: loaded.state.account,
         authenticated: loaded.state.sessionActive,
         storageCorrupt: false,
@@ -532,6 +698,11 @@ function loadInitialData() {
           loaded.state.yearMigrationCompletedFor,
         reviewEntries: loaded.state.reviewEntries,
         reviewReminder: loaded.state.reviewReminder,
+        focusProjects: loaded.state.focusProjects,
+        focusFlows: loaded.state.focusFlows,
+        focusQuotes: loaded.state.focusQuotes,
+        focusWallpapers: loaded.state.focusWallpapers,
+        focusPassword: loaded.state.focusPassword,
         account: loaded.state.account,
         authenticated: loaded.state.sessionActive,
         storageCorrupt: false,
@@ -540,10 +711,11 @@ function loadInitialData() {
 
     return {
       events: [],
-      categories: { schedule: [], todo: [], checkin: [] },
+      categories: [],
       yearMigrationCompletedFor: Number(todayISO().slice(0, 4)),
       reviewEntries: [],
       reviewReminder: normalizeReviewReminder(DEFAULT_REVIEW_REMINDER),
+      ...emptyFocusState(),
       account: null,
       authenticated: false,
       storageCorrupt: loaded.status === "corrupt",
@@ -558,6 +730,11 @@ function loadInitialData() {
       yearMigrationCompletedFor: loaded.yearMigrationCompletedFor,
       reviewEntries: loaded.reviewEntries,
       reviewReminder: loaded.reviewReminder,
+      focusProjects: loaded.focusProjects,
+      focusFlows: loaded.focusFlows,
+      focusQuotes: loaded.focusQuotes,
+      focusWallpapers: loaded.focusWallpapers,
+      focusPassword: loaded.focusPassword,
       account: null,
       authenticated: true,
       storageCorrupt: false,
@@ -566,10 +743,11 @@ function loadInitialData() {
     console.error("读取本地活动失败", error);
     return {
       events: [],
-      categories: { schedule: [], todo: [], checkin: [] },
+      categories: [],
       yearMigrationCompletedFor: Number(todayISO().slice(0, 4)),
       reviewEntries: [],
       reviewReminder: normalizeReviewReminder(DEFAULT_REVIEW_REMINDER),
+      ...emptyFocusState(),
       account: null,
       authenticated: true,
       storageCorrupt: false,
@@ -591,6 +769,11 @@ function persistEvents() {
         yearMigrationCompletedFor: state.yearMigrationCompletedFor,
         reviewEntries: state.reviewEntries,
         reviewReminder: state.reviewReminder,
+        focusProjects: state.focusProjects,
+        focusFlows: state.focusFlows,
+        focusQuotes: state.focusQuotes,
+        focusWallpapers: state.focusWallpapers,
+        focusPassword: state.focusPassword,
       });
     } else {
       writeWebState({
@@ -599,6 +782,11 @@ function persistEvents() {
         yearMigrationCompletedFor: state.yearMigrationCompletedFor,
         reviewEntries: state.reviewEntries,
         reviewReminder: state.reviewReminder,
+        focusProjects: state.focusProjects,
+        focusFlows: state.focusFlows,
+        focusQuotes: state.focusQuotes,
+        focusWallpapers: state.focusWallpapers,
+        focusPassword: state.focusPassword,
       });
     }
     if (nativeApp && state.authenticated) {
@@ -970,12 +1158,13 @@ async function handleAuthSubmit(event) {
         password,
       });
       state.events = [];
-      state.categories = { schedule: [], todo: [], checkin: [] };
+      state.categories = [];
       state.yearMigrationCompletedFor = Number(todayISO().slice(0, 4));
       state.reviewEntries = [];
       state.reviewReminder = normalizeReviewReminder(
         DEFAULT_REVIEW_REMINDER,
       );
+      Object.assign(state, emptyFocusState());
       state.authenticated = true;
       state.storageCorrupt = false;
       persistEvents();
@@ -1001,6 +1190,9 @@ async function handleAuthSubmit(event) {
     void syncNativeWidgetSnapshot(state.events);
     void handleWidgetLaunch();
     requestAnimationFrame(() => {
+      if (maybeRestoreFocusSession()) {
+        return;
+      }
       if (migrationIsMandatory()) {
         openMigrationDialog();
       } else {
@@ -1058,7 +1250,9 @@ function renderBackupStatus() {
 function snapshotBefore(reason) {
   if (
     nativeApp &&
-    (state.events.length > 0 || state.reviewEntries.length > 0)
+    (state.events.length > 0 ||
+      state.reviewEntries.length > 0 ||
+      state.focusProjects.length > 0)
   ) {
     addRecoveryPoint(
       {
@@ -1067,6 +1261,11 @@ function snapshotBefore(reason) {
         yearMigrationCompletedFor: state.yearMigrationCompletedFor,
         reviewEntries: state.reviewEntries,
         reviewReminder: state.reviewReminder,
+        focusProjects: state.focusProjects,
+        focusFlows: state.focusFlows,
+        focusQuotes: state.focusQuotes,
+        focusWallpapers: state.focusWallpapers,
+        focusPassword: state.focusPassword,
       },
       reason,
     );
@@ -1079,6 +1278,9 @@ function logout() {
   }
 
   state.authenticated = false;
+  clearActivityDrafts();
+  clearFocusSession();
+  state.activityDrafts = readActivityDrafts();
   persistEvents();
   void clearScheduledNotifications();
   void clearNativeWidgetSnapshot();
@@ -1133,15 +1335,19 @@ async function confirmAccountReset() {
   try {
     removeNativeState();
     clearRecoveryPoints();
+    clearActivityDrafts();
+    await clearWallpaperAssets();
+    clearFocusSession();
     await clearScheduledNotifications();
     await clearNativeWidgetSnapshot();
     state.account = null;
     state.authenticated = false;
     state.events = [];
-    state.categories = { schedule: [], todo: [], checkin: [] };
+    state.categories = [];
     state.yearMigrationCompletedFor = Number(todayISO().slice(0, 4));
     state.reviewEntries = [];
     state.reviewReminder = normalizeReviewReminder(DEFAULT_REVIEW_REMINDER);
+    Object.assign(state, emptyFocusState());
     state.storageCorrupt = false;
     state.notificationStatus = null;
     elements.resetAccountDialog.close();
@@ -1183,6 +1389,10 @@ async function exportActivities() {
       yearMigrationCompletedFor: state.yearMigrationCompletedFor,
       reviewEntries: state.reviewEntries,
       reviewReminder: state.reviewReminder,
+      focusProjects: state.focusProjects,
+      focusFlows: state.focusFlows,
+      focusQuotes: state.focusQuotes,
+      focusWallpapers: state.focusWallpapers,
     });
     const contents = JSON.stringify(backup, null, 2);
     const filename = backupFilename();
@@ -1235,14 +1445,22 @@ async function handleImportFile(event) {
       backup.yearMigrationCompletedFor;
     state.pendingImportReviewEntries = backup.reviewEntries;
     state.pendingImportReviewReminder = backup.reviewReminder;
+    state.pendingImportFocus = {
+      focusProjects: backup.focusProjects,
+      focusFlows: backup.focusFlows,
+      focusQuotes: backup.focusQuotes,
+      focusWallpapers: backup.focusWallpapers,
+      focusPassword: null,
+    };
     const incoming = summarizeEvents(backup.events);
     elements.importDialogMessage.textContent =
       `将用 ${backup.eventCount} 项活动替换当前 ${state.events.length} 项活动。` +
       `导入内容含 ${incoming.notificationCount} 个通知、${incoming.alarmCount} 个闹钟、` +
       `其中 ${incoming.scheduleCount} 个定期、${incoming.todoCount} 个待办、` +
       `${incoming.checkinCount} 个打卡；${incoming.pausedCount} 个暂停项目和 ` +
-      `${incoming.overrideCount} 次单次调整；${backup.reviewCount} 天回顾。` +
-      "账户与密码不会改变。";
+      `${incoming.overrideCount} 次单次调整；${backup.reviewCount} 天回顾；` +
+      `${backup.focusProjects.length} 个专注项目。` +
+      "账户不会改变；导入后专注密码会关闭。";
     elements.importDialog.showModal();
   } catch (error) {
     showToast(error.message || "无法读取备份文件");
@@ -1258,8 +1476,7 @@ function confirmImport() {
   snapshotBefore("导入活动前");
   state.events = state.pendingImportEvents;
   state.categories =
-    state.pendingImportCategories ??
-    { schedule: [], todo: [], checkin: [] };
+    state.pendingImportCategories ?? [];
   state.yearMigrationCompletedFor =
     state.pendingImportMigrationYear ??
     state.yearMigrationCompletedFor;
@@ -1269,11 +1486,16 @@ function confirmImport() {
   state.reviewReminder = normalizeReviewReminder(
     state.pendingImportReviewReminder,
   );
+  Object.assign(
+    state,
+    state.pendingImportFocus ?? emptyFocusState(),
+  );
   state.pendingImportEvents = null;
   state.pendingImportCategories = null;
   state.pendingImportMigrationYear = null;
   state.pendingImportReviewEntries = null;
   state.pendingImportReviewReminder = null;
+  state.pendingImportFocus = null;
   persistEvents();
   elements.importDialog.close();
   state.view = "day";
@@ -1317,6 +1539,11 @@ function renderRecoveryDialog() {
           point.yearMigrationCompletedFor;
         state.reviewEntries = point.reviewEntries;
         state.reviewReminder = point.reviewReminder;
+        state.focusProjects = point.focusProjects;
+        state.focusFlows = point.focusFlows;
+        state.focusQuotes = point.focusQuotes;
+        state.focusWallpapers = point.focusWallpapers;
+        state.focusPassword = point.focusPassword;
         persistEvents();
         elements.recoveryDialog.close();
         state.view = "day";
@@ -1491,11 +1718,16 @@ function render(options = {}) {
   elements.dayView.hidden = state.view !== "day";
   elements.weekView.hidden = state.view !== "week";
   elements.monthView.hidden = state.view !== "month";
+  elements.focusView.hidden = state.view !== "focus";
   elements.reviewView.hidden = state.view !== "review";
   elements.activityView.hidden = state.view !== "activity";
   elements.dayNavButton.classList.toggle("is-active", state.view === "day");
   elements.weekNavButton.classList.toggle("is-active", state.view === "week");
   elements.monthNavButton.classList.toggle("is-active", state.view === "month");
+  elements.focusNavButton.classList.toggle(
+    "is-active",
+    state.view === "focus",
+  );
   elements.activityNavButton.classList.toggle(
     "is-active",
     state.view === "activity",
@@ -1512,6 +1744,10 @@ function render(options = {}) {
     "aria-current",
     state.view === "month" ? "page" : "false",
   );
+  elements.focusNavButton.setAttribute(
+    "aria-current",
+    state.view === "focus" ? "page" : "false",
+  );
   elements.weekNavButton.setAttribute(
     "aria-current",
     state.view === "week" ? "page" : "false",
@@ -1524,7 +1760,7 @@ function render(options = {}) {
     "aria-current",
     state.view === "review" ? "page" : "false",
   );
-  const hideAddActions = state.view === "review";
+  const hideAddActions = ["review", "focus"].includes(state.view);
   elements.addFab.hidden =
     hideAddActions || (nativeApp && !state.authenticated);
 
@@ -1534,6 +1770,8 @@ function render(options = {}) {
     renderWeek(window);
   } else if (state.view === "month") {
     renderMonth(window);
+  } else if (state.view === "focus") {
+    renderFocus();
   } else if (state.view === "review") {
     renderReview();
   } else {
@@ -2235,6 +2473,949 @@ function renderMonth(window) {
   elements.monthGrid.replaceChildren(fragment);
 }
 
+function formatFocusDuration(seconds) {
+  const totalMinutes = Math.floor(Number(seconds || 0) / 60);
+  if (totalMinutes < 60) {
+    return `${totalMinutes} 分钟`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes > 0 ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`;
+}
+
+function focusProjectById(projectId) {
+  return state.focusProjects.find((project) => project.id === projectId);
+}
+
+function focusFlowSummary(flow) {
+  const projectMap = new Map(
+    state.focusProjects.map((project) => [project.id, project]),
+  );
+  return flow.steps
+    .map((step) => {
+      const project = projectMap.get(step.projectId);
+      return project
+        ? `${project.title} ${step.durationMinutes}分`
+        : null;
+    })
+    .filter(Boolean)
+    .join(" → ");
+}
+
+function requestDeleteFocusProject(project) {
+  const references = projectsReferencingFlow(
+    state.focusFlows,
+    project.id,
+  );
+  if (references.length > 0) {
+    showToast(
+      `“${project.title}”被 ${references.length} 个流程使用，请先调整流程`,
+    );
+    return;
+  }
+  openGenericConfirmation({
+    title: "删除单次项目？",
+    message: `将删除“${project.title}”及其累计时间，不能撤销。`,
+    confirmText: "确认删除",
+    danger: true,
+    action: () => {
+      snapshotBefore("删除专注项目前");
+      state.focusProjects = state.focusProjects.filter(
+        (item) => item.id !== project.id,
+      );
+      persistEvents();
+      renderFocus();
+      showToast("专注项目已删除");
+    },
+  });
+}
+
+function requestDeleteFocusFlow(flow) {
+  openGenericConfirmation({
+    title: "删除周期专注？",
+    message: `将删除流程“${flow.title}”，单次项目及累计时间不会删除。`,
+    confirmText: "确认删除",
+    danger: true,
+    action: () => {
+      state.focusFlows = state.focusFlows.filter(
+        (item) => item.id !== flow.id,
+      );
+      persistEvents();
+      renderFocus();
+      showToast("周期专注已删除");
+    },
+  });
+}
+
+function createFocusProjectRow(project) {
+  const row = document.createElement("article");
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  const detail = document.createElement("small");
+  const cumulative = document.createElement("span");
+  const actions = document.createElement("div");
+  const start = document.createElement("button");
+  const edit = document.createElement("button");
+  const remove = document.createElement("button");
+  row.className = `focus-project-row is-${project.type}`;
+  title.textContent = project.title;
+  detail.textContent =
+    `${project.type === "focus" ? "专注" : "休息"} · ${project.durationMinutes} 分钟` +
+    (project.notes ? ` · ${project.notes}` : "");
+  cumulative.className = "focus-project-total";
+  cumulative.textContent =
+    `累计 ${formatFocusDuration(project.accumulatedSeconds)} · ${project.completedRuns} 次完成`;
+  copy.className = "focus-project-copy";
+  copy.append(title, detail, cumulative);
+  start.type = "button";
+  start.className = "primary-button";
+  start.textContent = "开始";
+  start.addEventListener("click", () => startFocus(project, null));
+  edit.type = "button";
+  edit.className = "secondary-button";
+  edit.textContent = "编辑";
+  edit.addEventListener("click", () => openFocusProjectDialog(project));
+  remove.type = "button";
+  remove.className = "activity-delete";
+  remove.textContent = "删除";
+  remove.addEventListener("click", () =>
+    requestDeleteFocusProject(project),
+  );
+  actions.className = "focus-row-actions";
+  actions.append(start, edit, remove);
+  row.append(copy, actions);
+  return row;
+}
+
+function createFocusFlowRow(flow) {
+  const row = document.createElement("article");
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  const detail = document.createElement("small");
+  const total = document.createElement("span");
+  const actions = document.createElement("div");
+  const start = document.createElement("button");
+  const edit = document.createElement("button");
+  const remove = document.createElement("button");
+  row.className = "focus-flow-row";
+  title.textContent = flow.title;
+  detail.textContent = focusFlowSummary(flow);
+  total.textContent = `合计 ${focusFlowDurationMinutes(flow, state.focusProjects)} 分钟`;
+  copy.className = "focus-project-copy";
+  copy.append(title, detail, total);
+  start.type = "button";
+  start.className = "primary-button";
+  start.textContent = "开始";
+  start.addEventListener("click", () => startFocus(null, flow));
+  edit.type = "button";
+  edit.className = "secondary-button";
+  edit.textContent = "编辑";
+  edit.addEventListener("click", () => openFocusFlowDialog(flow));
+  remove.type = "button";
+  remove.className = "activity-delete";
+  remove.textContent = "删除";
+  remove.addEventListener("click", () => requestDeleteFocusFlow(flow));
+  actions.className = "focus-row-actions";
+  actions.append(start, edit, remove);
+  row.append(copy, actions);
+  return row;
+}
+
+function renderFocusQuotes() {
+  const fragment = document.createDocumentFragment();
+  if (state.focusQuotes.length === 0) {
+    fragment.append(createListEmpty("还没有专注语句，运行时将保持空白"));
+  }
+  for (const quote of state.focusQuotes) {
+    const row = document.createElement("div");
+    const copy = document.createElement("span");
+    const remove = document.createElement("button");
+    row.className = "focus-library-row";
+    copy.textContent = quote.text;
+    remove.type = "button";
+    remove.className = "activity-delete";
+    remove.textContent = "删除";
+    remove.addEventListener("click", () => {
+      state.focusQuotes = state.focusQuotes.filter(
+        (item) => item.id !== quote.id,
+      );
+      persistEvents();
+      renderFocus();
+    });
+    row.append(copy, remove);
+    fragment.append(row);
+  }
+  elements.focusQuoteList.replaceChildren(fragment);
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(reader.result));
+    reader.addEventListener("error", () => reject(reader.error));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function renderFocusWallpapers() {
+  const fragment = document.createDocumentFragment();
+  if (state.focusWallpapers.length === 0) {
+    fragment.append(
+      createListEmpty("还没有自定义壁纸，运行时使用空白背景"),
+    );
+  }
+  for (const wallpaper of state.focusWallpapers) {
+    const row = document.createElement("div");
+    const image = document.createElement("span");
+    const name = document.createElement("span");
+    const remove = document.createElement("button");
+    row.className = "focus-wallpaper-row";
+    image.className = "focus-wallpaper-thumb";
+    name.textContent = wallpaper.name;
+    remove.type = "button";
+    remove.className = "activity-delete";
+    remove.textContent = "删除";
+    remove.addEventListener("click", async () => {
+      await deleteWallpaperAsset(wallpaper.id);
+      state.focusWallpapers = state.focusWallpapers.filter(
+        (item) => item.id !== wallpaper.id,
+      );
+      persistEvents();
+      renderFocus();
+    });
+    row.append(image, name, remove);
+    fragment.append(row);
+    void readWallpaperAsset(wallpaper.id)
+      .then(async (blob) => {
+        if (!blob) {
+          return;
+        }
+        const url = await blobToDataUrl(blob);
+        image.style.backgroundImage = `url("${url}")`;
+      })
+      .catch(() => {});
+  }
+  elements.focusWallpaperList.replaceChildren(fragment);
+}
+
+function renderFocus() {
+  elements.viewKicker.textContent = "专注";
+  elements.viewTitle.textContent = "专注空间";
+  elements.viewSummary.textContent =
+    `${state.focusProjects.length} 个单次项目 · ${state.focusFlows.length} 个流程`;
+  elements.focusTotalTime.textContent = formatFocusDuration(
+    focusTotalSeconds(state.focusProjects),
+  );
+  elements.focusPasswordStatus.textContent = state.focusPassword
+    ? "专注密码已设置；提前结束需要密码和二次确认。"
+    : "专注密码未设置；提前结束仍会二次确认。";
+  elements.configureFocusPasswordButton.textContent =
+    state.focusPassword ? "修改专注密码" : "设置专注密码";
+  const projectFragment = document.createDocumentFragment();
+  if (state.focusProjects.length === 0) {
+    projectFragment.append(
+      createListEmpty("还没有单次项目，先创建一个 25 分钟专注"),
+    );
+  } else {
+    projectFragment.append(
+      ...state.focusProjects.map(createFocusProjectRow),
+    );
+  }
+  elements.focusProjectList.replaceChildren(projectFragment);
+  const flowFragment = document.createDocumentFragment();
+  if (state.focusFlows.length === 0) {
+    flowFragment.append(
+      createListEmpty("还没有周期专注，可把多个项目按顺序组合"),
+    );
+  } else {
+    flowFragment.append(...state.focusFlows.map(createFocusFlowRow));
+  }
+  elements.focusFlowList.replaceChildren(flowFragment);
+  renderFocusQuotes();
+  renderFocusWallpapers();
+}
+
+function renderTutorialTopic(topicId) {
+  const topic =
+    TUTORIAL_TOPICS.find((item) => item.id === topicId) ??
+    TUTORIAL_TOPICS[0];
+  state.tutorialTopicId = topic.id;
+  for (const button of elements.tutorialTopicList.querySelectorAll(
+    "button",
+  )) {
+    button.classList.toggle(
+      "is-active",
+      button.dataset.topicId === topic.id,
+    );
+  }
+  const heading = document.createElement("h3");
+  const summary = document.createElement("p");
+  heading.textContent = topic.title;
+  summary.className = "tutorial-summary";
+  summary.textContent = topic.summary;
+  const sections = topic.sections.map((section) => {
+    const wrapper = document.createElement("section");
+    const title = document.createElement("h4");
+    const body = document.createElement("p");
+    title.textContent = section.heading;
+    body.textContent = section.body;
+    wrapper.append(title, body);
+    return wrapper;
+  });
+  elements.tutorialArticle.replaceChildren(
+    heading,
+    summary,
+    ...sections,
+  );
+}
+
+function openTutorial() {
+  const fragment = document.createDocumentFragment();
+  for (const topic of TUTORIAL_TOPICS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.topicId = topic.id;
+    button.textContent = topic.title;
+    button.addEventListener("click", () =>
+      renderTutorialTopic(topic.id),
+    );
+    fragment.append(button);
+  }
+  elements.tutorialTopicList.replaceChildren(fragment);
+  renderTutorialTopic(state.tutorialTopicId ?? TUTORIAL_TOPICS[0].id);
+  elements.tutorialDialog.showModal();
+}
+
+function openFocusProjectDialog(project = null) {
+  state.editingFocusProjectId = project?.id ?? null;
+  elements.focusProjectForm.reset();
+  elements.focusProjectDialogTitle.textContent = project
+    ? "编辑单次项目"
+    : "新建单次项目";
+  elements.focusProjectName.value = project?.title ?? "";
+  elements.focusProjectMinutes.value = String(
+    project?.durationMinutes ?? 25,
+  );
+  elements.focusProjectNotes.value = project?.notes ?? "";
+  for (const input of elements.focusProjectTypeInputs) {
+    input.checked = input.value === (project?.type ?? "focus");
+  }
+  elements.focusProjectError.hidden = true;
+  elements.focusProjectDialog.showModal();
+  requestAnimationFrame(() => elements.focusProjectName.focus());
+}
+
+function handleFocusProjectSubmit(event) {
+  event.preventDefault();
+  const input = {
+    title: elements.focusProjectName.value,
+    type:
+      [...elements.focusProjectTypeInputs].find(
+        (item) => item.checked,
+      )?.value ?? "focus",
+    durationMinutes: Number(elements.focusProjectMinutes.value),
+    notes: elements.focusProjectNotes.value,
+  };
+  const error = validateFocusProjectInput(input);
+  if (error) {
+    elements.focusProjectError.textContent = error;
+    elements.focusProjectError.hidden = false;
+    return;
+  }
+  const existing = state.editingFocusProjectId
+    ? focusProjectById(state.editingFocusProjectId)
+    : null;
+  const project = focusProjectFromInput(input, existing);
+  state.focusProjects = existing
+    ? state.focusProjects.map((item) =>
+        item.id === project.id ? project : item,
+      )
+    : [...state.focusProjects, project];
+  state.editingFocusProjectId = null;
+  persistEvents();
+  elements.focusProjectDialog.close();
+  renderFocus();
+  showToast(existing ? "专注项目已更新" : "专注项目已创建");
+}
+
+function renderFocusFlowStepEditor() {
+  const fragment = document.createDocumentFragment();
+  if (state.focusFlowDraftSteps.length === 0) {
+    fragment.append(createListEmpty("还没有步骤"));
+  }
+  state.focusFlowDraftSteps.forEach((step, index) => {
+    const project = focusProjectById(step.projectId);
+    const row = document.createElement("div");
+    const copy = document.createElement("span");
+    const up = document.createElement("button");
+    const down = document.createElement("button");
+    const remove = document.createElement("button");
+    row.className = "focus-flow-step";
+    copy.textContent =
+      `${index + 1}. ${project?.title ?? "已删除项目"} · ${step.durationMinutes} 分钟`;
+    up.type = "button";
+    up.textContent = "↑";
+    up.disabled = index === 0;
+    up.addEventListener("click", () => {
+      [state.focusFlowDraftSteps[index - 1], state.focusFlowDraftSteps[index]] =
+        [state.focusFlowDraftSteps[index], state.focusFlowDraftSteps[index - 1]];
+      renderFocusFlowStepEditor();
+    });
+    down.type = "button";
+    down.textContent = "↓";
+    down.disabled = index === state.focusFlowDraftSteps.length - 1;
+    down.addEventListener("click", () => {
+      [state.focusFlowDraftSteps[index + 1], state.focusFlowDraftSteps[index]] =
+        [state.focusFlowDraftSteps[index], state.focusFlowDraftSteps[index + 1]];
+      renderFocusFlowStepEditor();
+    });
+    remove.type = "button";
+    remove.textContent = "删除";
+    remove.addEventListener("click", () => {
+      state.focusFlowDraftSteps.splice(index, 1);
+      renderFocusFlowStepEditor();
+    });
+    row.append(copy, up, down, remove);
+    fragment.append(row);
+  });
+  elements.focusFlowSteps.replaceChildren(fragment);
+}
+
+function populateFocusFlowProjectSelect(selectedId = null) {
+  const options = state.focusProjects.map((project) => {
+    const option = document.createElement("option");
+    option.value = project.id;
+    option.textContent = `${project.type === "focus" ? "专注" : "休息"} · ${project.title}`;
+    option.selected = project.id === selectedId;
+    return option;
+  });
+  elements.focusFlowStepSelect.replaceChildren(...options);
+  const project = focusProjectById(elements.focusFlowStepSelect.value);
+  elements.focusFlowStepMinutes.value = String(
+    project?.durationMinutes ?? 25,
+  );
+}
+
+function openFocusFlowDialog(flow = null) {
+  if (state.focusProjects.length === 0) {
+    showToast("请先创建至少一个单次项目");
+    return;
+  }
+  state.editingFocusFlowId = flow?.id ?? null;
+  state.focusFlowDraftSteps = flow
+    ? flow.steps.map((step) => ({ ...step }))
+    : [];
+  elements.focusFlowForm.reset();
+  elements.focusFlowDialogTitle.textContent = flow
+    ? "编辑周期专注"
+    : "新建周期专注";
+  elements.focusFlowName.value = flow?.title ?? "";
+  elements.focusFlowNotes.value = flow?.notes ?? "";
+  elements.focusFlowError.hidden = true;
+  populateFocusFlowProjectSelect();
+  renderFocusFlowStepEditor();
+  elements.focusFlowDialog.showModal();
+}
+
+function addFocusFlowStep() {
+  const projectId = elements.focusFlowStepSelect.value;
+  const durationMinutes = Number(elements.focusFlowStepMinutes.value);
+  if (!projectId) {
+    showToast("请选择单次项目");
+    return;
+  }
+  if (
+    !Number.isInteger(durationMinutes) ||
+    durationMinutes < 1 ||
+    durationMinutes > 240
+  ) {
+    showToast("步骤时间必须是 1–240 分钟");
+    return;
+  }
+  if (state.focusFlowDraftSteps.length >= 20) {
+    showToast("一个流程最多 20 个步骤");
+    return;
+  }
+  state.focusFlowDraftSteps.push({ projectId, durationMinutes });
+  renderFocusFlowStepEditor();
+}
+
+function handleFocusFlowSubmit(event) {
+  event.preventDefault();
+  const input = {
+    title: elements.focusFlowName.value,
+    notes: elements.focusFlowNotes.value,
+    steps: state.focusFlowDraftSteps,
+  };
+  const error = validateFocusFlowInput(input, state.focusProjects);
+  if (error) {
+    elements.focusFlowError.textContent = error;
+    elements.focusFlowError.hidden = false;
+    return;
+  }
+  const existing = state.editingFocusFlowId
+    ? state.focusFlows.find(
+        (flow) => flow.id === state.editingFocusFlowId,
+      )
+    : null;
+  const flow = focusFlowFromInput(
+    input,
+    state.focusProjects,
+    existing,
+  );
+  state.focusFlows = existing
+    ? state.focusFlows.map((item) =>
+        item.id === flow.id ? flow : item,
+      )
+    : [...state.focusFlows, flow];
+  state.editingFocusFlowId = null;
+  state.focusFlowDraftSteps = [];
+  persistEvents();
+  elements.focusFlowDialog.close();
+  renderFocus();
+  showToast(existing ? "周期专注已更新" : "周期专注已创建");
+}
+
+function openFocusPasswordDialog() {
+  elements.focusPasswordForm.reset();
+  elements.currentFocusPasswordField.hidden = !state.focusPassword;
+  elements.clearFocusPasswordButton.hidden = !state.focusPassword;
+  elements.focusPasswordError.hidden = true;
+  elements.focusPasswordDialog.showModal();
+}
+
+async function handleFocusPasswordSubmit(event) {
+  event.preventDefault();
+  try {
+    if (
+      state.focusPassword &&
+      !(await verifyFocusPassword(
+        state.focusPassword,
+        elements.currentFocusPassword.value,
+      ))
+    ) {
+      throw new Error("当前专注密码不正确");
+    }
+    const password = elements.newFocusPassword.value;
+    const confirmation = elements.confirmFocusPassword.value;
+    const error = validateFocusPassword(password, confirmation);
+    if (error) {
+      throw new Error(error);
+    }
+    state.focusPassword = await createFocusPassword(password);
+    persistEvents();
+    elements.focusPasswordDialog.close();
+    renderFocus();
+    showToast("专注密码已保存");
+  } catch (error) {
+    elements.focusPasswordError.textContent = error.message;
+    elements.focusPasswordError.hidden = false;
+  }
+}
+
+function openFocusPasswordResetDialog() {
+  elements.focusPasswordResetInput.value = "";
+  elements.focusPasswordResetError.hidden = true;
+  elements.focusPasswordResetLabel.textContent = nativeApp
+    ? "本地账户密码"
+    : "确认文字";
+  elements.focusPasswordResetMessage.textContent = nativeApp
+    ? "输入本地账户密码后清除专注密码。"
+    : "网页没有账户安全边界。请输入“清除专注密码”确认。";
+  elements.focusPasswordResetDialog.showModal();
+}
+
+async function confirmClearFocusPassword() {
+  try {
+    const value = elements.focusPasswordResetInput.value;
+    if (
+      nativeApp &&
+      !(await verifyAccountPassword(state.account, value))
+    ) {
+      throw new Error("本地账户密码不正确");
+    }
+    if (!nativeApp && value !== "清除专注密码") {
+      throw new Error("确认文字不正确");
+    }
+    state.focusPassword = null;
+    persistEvents();
+    elements.focusPasswordResetDialog.close();
+    elements.focusPasswordDialog.close();
+    renderFocus();
+    showToast("专注密码已清除");
+  } catch (error) {
+    elements.focusPasswordResetError.textContent = error.message;
+    elements.focusPasswordResetError.hidden = false;
+  }
+}
+
+async function addFocusQuote() {
+  const value = elements.focusQuoteInput.value.trim();
+  if (!value) {
+    return;
+  }
+  state.focusQuotes.push({
+    id: crypto.randomUUID?.() ?? `quote-${Date.now()}`,
+    text: value.slice(0, 200),
+    createdAt: new Date().toISOString(),
+  });
+  elements.focusQuoteInput.value = "";
+  persistEvents();
+  renderFocus();
+}
+
+async function handleFocusWallpaperUpload(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) {
+    return;
+  }
+  if (state.focusWallpapers.length >= 12) {
+    showToast("最多保存 12 张专注壁纸");
+    return;
+  }
+  try {
+    const blob = await compressWallpaper(file);
+    const id = crypto.randomUUID?.() ?? `wallpaper-${Date.now()}`;
+    await saveWallpaperAsset(id, blob);
+    state.focusWallpapers.push({
+      id,
+      name: file.name.slice(0, 80) || "专注壁纸",
+      createdAt: new Date().toISOString(),
+    });
+    persistEvents();
+    renderFocus();
+    showToast("壁纸已添加到本机专注库");
+  } catch (error) {
+    showToast(error.message || "无法添加壁纸");
+  }
+}
+
+function randomItem(items) {
+  return items.length > 0
+    ? items[Math.floor(Math.random() * items.length)]
+    : null;
+}
+
+async function setFocusRunnerVisuals() {
+  const wallpaper = randomItem(state.focusWallpapers);
+  const quote = randomItem(state.focusQuotes);
+  if (state.focusAssetUrl) {
+    URL.revokeObjectURL(state.focusAssetUrl);
+    state.focusAssetUrl = null;
+  }
+  elements.focusRunnerBackground.style.backgroundImage = "";
+  elements.focusRunnerQuote.textContent = quote?.text ?? "";
+  elements.focusRunnerQuote.hidden = !quote;
+  if (wallpaper) {
+    try {
+      const blob = await readWallpaperAsset(wallpaper.id);
+      if (blob && !state.focusRunFinished) {
+        state.focusAssetUrl = URL.createObjectURL(blob);
+        elements.focusRunnerBackground.style.backgroundImage =
+          `linear-gradient(rgb(8 14 24 / 58%), rgb(8 14 24 / 68%)), url("${state.focusAssetUrl}")`;
+      }
+    } catch {
+      // The blank runner remains available when local assets cannot load.
+    }
+  }
+}
+
+function focusStepElapsedSeconds(session, now = Date.now()) {
+  const runningSeconds =
+    session?.status === "running" && session.currentStepStartedAt
+      ? Math.max(
+          0,
+          Math.floor(
+            (now - Date.parse(session.currentStepStartedAt)) / 1000,
+          ),
+        )
+      : 0;
+  return session.stepElapsedSeconds + runningSeconds;
+}
+
+function currentFocusStep(session = state.focusRun) {
+  return session?.steps?.[session.stepIndex] ?? null;
+}
+
+function updateFocusRunner() {
+  const session = state.focusRun;
+  const step = currentFocusStep(session);
+  if (!session || !step) {
+    return;
+  }
+  const elapsed = Math.min(
+    step.durationSeconds,
+    focusStepElapsedSeconds(session),
+  );
+  const remaining = Math.max(0, step.durationSeconds - elapsed);
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  elements.focusRunnerTitle.textContent = session.title;
+  elements.focusRunnerStage.textContent =
+    step.type === "focus" ? "专注" : "休息";
+  elements.focusRunnerStepLabel.textContent =
+    `${session.stepIndex + 1} / ${session.steps.length}`;
+  elements.focusRunnerTime.textContent =
+    `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  elements.focusRunnerProgress.style.width =
+    `${Math.min(100, (elapsed / step.durationSeconds) * 100)}%`;
+  elements.focusRunner.classList.toggle(
+    "is-rest",
+    step.type === "rest",
+  );
+}
+
+function persistFocusRunProgress(session = state.focusRun) {
+  if (!session) {
+    return;
+  }
+  const elapsed = Math.min(
+    session.steps[session.stepIndex].durationSeconds,
+    focusStepElapsedSeconds(session),
+  );
+  writeFocusSession({
+    ...session,
+    stepElapsedSeconds: elapsed,
+    currentStepStartedAt:
+      session.status === "running"
+        ? new Date().toISOString()
+        : null,
+  });
+}
+
+function pauseFocusRun({ automatic = false } = {}) {
+  if (!state.focusRun || state.focusRun.status !== "running") {
+    return;
+  }
+  const elapsed = Math.min(
+    currentFocusStep().durationSeconds,
+    focusStepElapsedSeconds(state.focusRun),
+  );
+  state.focusRun = {
+    ...state.focusRun,
+    status: "paused",
+    stepElapsedSeconds: elapsed,
+    currentStepStartedAt: null,
+  };
+  writeFocusSession(state.focusRun);
+  window.clearInterval(state.focusTimer);
+  state.focusTimer = null;
+  state.focusPausedReason = automatic ? "app-background" : "manual";
+  elements.focusPauseOverlay.hidden = false;
+  updateFocusRunner();
+}
+
+function resumeFocusRun() {
+  if (!state.focusRun || state.focusRun.status !== "paused") {
+    return;
+  }
+  state.focusRun = {
+    ...state.focusRun,
+    status: "running",
+    currentStepStartedAt: new Date().toISOString(),
+  };
+  state.focusPausedReason = null;
+  if (state.focusAssetUrl) {
+    URL.revokeObjectURL(state.focusAssetUrl);
+    state.focusAssetUrl = null;
+  }
+  elements.focusRunnerBackground.style.backgroundImage = "";
+  elements.focusPauseOverlay.hidden = true;
+  writeFocusSession(state.focusRun);
+  window.clearInterval(state.focusTimer);
+  state.focusTimer = window.setInterval(tickFocusRun, 250);
+  updateFocusRunner();
+}
+
+function addCurrentFocusTime(completed) {
+  const step = currentFocusStep();
+  if (!step) {
+    return;
+  }
+  const elapsed = Math.min(
+    step.durationSeconds,
+    focusStepElapsedSeconds(state.focusRun),
+  );
+  state.focusProjects = addFocusProjectTime(
+    state.focusProjects,
+    step.projectId,
+    elapsed,
+    { completed },
+  );
+}
+
+function finishFocusRun() {
+  window.clearInterval(state.focusTimer);
+  state.focusTimer = null;
+  clearFocusSession();
+  state.focusRun = null;
+  state.focusRunFinished = true;
+  state.focusPausedReason = null;
+  elements.focusPauseOverlay.hidden = true;
+  elements.focusRunner.hidden = true;
+  document.body.classList.remove("focus-running");
+  elements.appShell.hidden = false;
+  if (nativeApp) {
+    void globalThis.DailyRouteNative?.DailyRouteDevice?.setFocusMode?.({
+      enabled: false,
+    })?.catch?.(() => {});
+  } else if (document.fullscreenElement) {
+    void document.exitFullscreen?.().catch(() => {});
+  }
+  persistEvents();
+  state.view = "focus";
+  render();
+}
+
+function tickFocusRun() {
+  if (!state.focusRun || state.focusRun.status !== "running") {
+    return;
+  }
+  const step = currentFocusStep();
+  const elapsed = focusStepElapsedSeconds(state.focusRun);
+  if (elapsed < step.durationSeconds) {
+    updateFocusRunner();
+    if (Date.now() - state.lastFocusCheckpoint >= 5000) {
+      persistFocusRunProgress();
+      state.lastFocusCheckpoint = Date.now();
+    }
+    return;
+  }
+  state.focusRun = {
+    ...state.focusRun,
+    stepElapsedSeconds: step.durationSeconds,
+    currentStepStartedAt: null,
+  };
+  addCurrentFocusTime(true);
+  persistEvents();
+  const nextIndex = state.focusRun.stepIndex + 1;
+  if (nextIndex >= state.focusRun.steps.length) {
+    finishFocusRun();
+    showToast("本次专注已完成");
+    return;
+  }
+  state.focusRun = {
+    ...state.focusRun,
+    stepIndex: nextIndex,
+    stepElapsedSeconds: 0,
+    currentStepStartedAt: new Date().toISOString(),
+    status: "running",
+    updatedAt: new Date().toISOString(),
+  };
+  writeFocusSession(state.focusRun);
+  updateFocusRunner();
+}
+
+async function displayFocusRunner(session) {
+  state.focusRun = session;
+  state.focusRunFinished = false;
+  elements.appShell.hidden = true;
+  elements.addFab.hidden = true;
+  elements.focusRunner.hidden = false;
+  document.body.classList.add("focus-running");
+  elements.focusPauseOverlay.hidden = session.status !== "paused";
+  await setFocusRunnerVisuals();
+  updateFocusRunner();
+  if (nativeApp) {
+    try {
+      await globalThis.DailyRouteNative?.DailyRouteDevice?.setFocusMode?.({
+        enabled: true,
+      });
+    } catch {
+      // The runner remains usable if immersive mode is unavailable.
+    }
+  } else {
+    try {
+      await document.documentElement.requestFullscreen?.();
+    } catch {
+      // Browsers may reject fullscreen outside a direct user gesture.
+    }
+  }
+}
+
+async function startFocus(project, flow) {
+  if (state.focusRun) {
+    showToast("已有正在进行的专注");
+    return;
+  }
+  const session = createFocusRun({
+    project,
+    flow,
+    projects: state.focusProjects,
+  });
+  if (!session) {
+    showToast("这个专注没有可运行的步骤");
+    return;
+  }
+  writeFocusSession(session);
+  state.lastFocusCheckpoint = Date.now();
+  await displayFocusRunner(session);
+  if (session.status === "running") {
+    state.focusTimer = window.setInterval(tickFocusRun, 250);
+  }
+}
+
+function openFocusExitDialog() {
+  if (!state.focusRun) {
+    return;
+  }
+  pauseFocusRun({ automatic: false });
+  elements.focusExitPassword.value = "";
+  elements.focusExitPasswordField.hidden = !state.focusPassword;
+  elements.focusExitError.hidden = true;
+  elements.focusExitDialog.showModal();
+}
+
+async function confirmFocusExit() {
+  try {
+    if (
+      state.focusPassword &&
+      !(await verifyFocusPassword(
+        state.focusPassword,
+        elements.focusExitPassword.value,
+      ))
+    ) {
+      throw new Error("专注密码不正确");
+    }
+    addCurrentFocusTime(false);
+    elements.focusExitDialog.close();
+    finishFocusRun();
+    showToast("专注已结束，已完成时间已保留");
+  } catch (error) {
+    elements.focusExitError.textContent = error.message;
+    elements.focusExitError.hidden = false;
+  }
+}
+
+function maybeRestoreFocusSession() {
+  const stored = readFocusSession();
+  if (!stored) {
+    return false;
+  }
+  state.focusRun = stored;
+  elements.focusSessionMessage.textContent =
+    `“${stored.title}”上次已暂停在第 ${stored.stepIndex + 1} 步。继续会从当前位置恢复。`;
+  elements.focusSessionDialog.showModal();
+  return true;
+}
+
+async function resumeStoredFocus() {
+  const session = state.focusRun;
+  elements.focusSessionDialog.close();
+  if (!session) {
+    return;
+  }
+  await displayFocusRunner(session);
+}
+
+function discardStoredFocus() {
+  elements.focusSessionDialog.close();
+  addCurrentFocusTime(false);
+  finishFocusRun();
+  showToast("上次专注已结束，已完成时间已保留");
+}
+
 function reviewEntryForDate(date) {
   return (
     state.reviewEntries.find((entry) => entry.date === date) ?? null
@@ -2700,6 +3881,24 @@ function renderActivities(window) {
         left.title.localeCompare(right.title, "zh-CN"),
     );
 
+  state.visibleActivityIds = state.archiveMode
+    ? []
+    : [
+        ...scheduleGroups.map((group) => group.activity.id),
+        ...todos.map((activity) => activity.id),
+        ...checkins.map((activity) => activity.id),
+        ...paused.map((activity) => activity.id),
+      ];
+  if (state.archiveMode && state.selectionMode) {
+    state.selectionMode = false;
+    state.selectedActivityIds.clear();
+  }
+  for (const id of [...state.selectedActivityIds]) {
+    if (!state.visibleActivityIds.includes(id)) {
+      state.selectedActivityIds.delete(id);
+    }
+  }
+
   elements.viewKicker.textContent = state.archiveMode ? "归档" : "活动";
   elements.viewTitle.textContent = state.archiveMode
     ? `${state.archiveYear}年归档`
@@ -2710,6 +3909,15 @@ function renderActivities(window) {
   elements.archiveToggleButton.textContent = state.archiveMode
     ? "返回活动"
     : "查看归档";
+  elements.activitySelectModeButton.hidden = state.archiveMode;
+  elements.activitySelectModeButton.textContent = state.selectionMode
+    ? "结束多选"
+    : "多选";
+  elements.bulkSelectionBar.hidden = !state.selectionMode;
+  elements.bulkSelectionCount.textContent =
+    `已选 ${state.selectedActivityIds.size} 项`;
+  elements.openBulkActionsButton.disabled =
+    state.selectedActivityIds.size === 0;
   elements.archiveActivitySection.hidden = !state.archiveMode;
   for (const section of [
     elements.activeActivitySection,
@@ -2773,6 +3981,43 @@ function renderActivities(window) {
   renderMigrationBanner();
 }
 
+function toggleActivitySelection(activityId) {
+  if (state.selectedActivityIds.has(activityId)) {
+    state.selectedActivityIds.delete(activityId);
+  } else {
+    state.selectedActivityIds.add(activityId);
+  }
+  renderActivities(getScheduleWindow());
+}
+
+function configureSelectableActivityRow(row, activityId) {
+  if (!state.selectionMode) {
+    return row;
+  }
+  const selected = state.selectedActivityIds.has(activityId);
+  const box = document.createElement("span");
+  row.classList.add("is-selectable");
+  row.classList.toggle("is-selected", selected);
+  row.setAttribute("aria-selected", selected ? "true" : "false");
+  box.className = "activity-select-box";
+  box.textContent = selected ? "✓" : "";
+  box.setAttribute("aria-hidden", "true");
+  row.prepend(box);
+  row.addEventListener(
+    "click",
+    (event) => {
+      if (!state.selectionMode) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      toggleActivitySelection(activityId);
+    },
+    { capture: true },
+  );
+  return row;
+}
+
 function createActiveScheduleRow(group) {
   const row = document.createElement("div");
   const main = document.createElement("button");
@@ -2805,7 +4050,7 @@ function createActiveScheduleRow(group) {
     );
   });
   row.append(main);
-  return row;
+  return configureSelectableActivityRow(row, group.activity.id);
 }
 
 function createTodoActivityRow(activity) {
@@ -2825,7 +4070,7 @@ function createTodoActivityRow(activity) {
   name.textContent = activity.title;
   rule.className = "activity-rule";
   rule.textContent =
-    `${categoryName(state.categories, "todo", activity.categoryId)} · ` +
+    `${categoryName(state.categories, activity.categoryId)} · ` +
     reminderLabel(activity);
   due.className = `activity-next${overdue ? " is-overdue" : ""}`;
   due.textContent = overdue
@@ -2839,7 +4084,7 @@ function createTodoActivityRow(activity) {
   main.append(copy, due);
   main.addEventListener("click", () => openTodoEditDialog(activity));
   row.append(main, complete);
-  return row;
+  return configureSelectableActivityRow(row, activity.id);
 }
 
 function createCheckinActivityRow(activity) {
@@ -2857,7 +4102,7 @@ function createCheckinActivityRow(activity) {
   name.textContent = activity.title;
   rule.className = "activity-rule";
   rule.textContent =
-    `${categoryName(state.categories, "checkin", activity.categoryId)} · ` +
+    `${categoryName(state.categories, activity.categoryId)} · ` +
     `今年已打卡 ${checkinDatesBetween(
       activity,
       `${activity.year}-01-01`,
@@ -2872,7 +4117,7 @@ function createCheckinActivityRow(activity) {
   calendar.textContent = "月历";
   calendar.addEventListener("click", () => openCheckinCalendar(activity));
   row.append(main, calendar);
-  return row;
+  return configureSelectableActivityRow(row, activity.id);
 }
 
 function createPausedActivityRow(activity) {
@@ -2893,7 +4138,7 @@ function createPausedActivityRow(activity) {
   rule.className = "activity-rule";
   rule.textContent =
     `${ACTIVITY_KIND_LABELS[activity.kind]} · ` +
-    categoryName(state.categories, activity.kind, activity.categoryId);
+    categoryName(state.categories, activity.categoryId);
   resumeButton.type = "button";
   resumeButton.className = "activity-resume";
   resumeButton.textContent = "恢复";
@@ -2935,7 +4180,7 @@ function createPausedActivityRow(activity) {
     }
   });
   row.append(main, resumeButton, deleteButton);
-  return row;
+  return configureSelectableActivityRow(row, activity.id);
 }
 
 function createArchivedActivityRow(activity) {
@@ -2956,7 +4201,7 @@ function createArchivedActivityRow(activity) {
   rule.className = "activity-rule";
   rule.textContent =
     `${ACTIVITY_KIND_LABELS[activity.kind]} · ` +
-    categoryName(state.categories, activity.kind, activity.categoryId) +
+    categoryName(state.categories, activity.categoryId) +
     (activity.archiveReason ? ` · ${activity.archiveReason}` : "");
   last.className = "activity-next";
   last.textContent = activity.kind === "todo"
@@ -3022,19 +4267,17 @@ function renderCategoryOptions() {
   const options = [document.createElement("option")];
   options[0].value = "";
   options[0].textContent = "全部分类";
-  for (const kind of ["schedule", "todo", "checkin"]) {
-    for (const category of state.categories[kind]) {
-      const option = document.createElement("option");
-      option.value = category.id;
-      option.textContent = `${ACTIVITY_KIND_LABELS[kind]} · ${category.name}`;
-      option.selected = category.id === selected;
-      options.push(option);
-    }
+  for (const category of state.categories) {
+    const option = document.createElement("option");
+    option.value = category.id;
+    option.textContent = category.name;
+    option.selected = category.id === selected;
+    options.push(option);
   }
   elements.activityCategoryFilter.replaceChildren(...options);
-  elements.activityCategoryFilter.value = state.categories.schedule
-    .concat(state.categories.todo, state.categories.checkin)
-    .some((category) => category.id === selected)
+  elements.activityCategoryFilter.value = state.categories.some(
+    (category) => category.id === selected,
+  )
     ? selected
     : "";
   if (!elements.activityCategoryFilter.value) {
@@ -3242,7 +4485,7 @@ function setActivityKind(kind) {
   for (const input of elements.activityKindInputs) {
     input.checked = input.value === kind;
   }
-  populateFormCategories(kind, null);
+  populateFormCategories();
   updateActivityFormUi();
 }
 
@@ -3296,11 +4539,11 @@ function updateCheckinReminderUi() {
   );
 }
 
-function populateFormCategories(kind, selectedId = null) {
+function populateFormCategories(selectedId = null) {
   const options = [document.createElement("option")];
   options[0].value = "";
   options[0].textContent = "未分类";
-  for (const category of state.categories[kind] ?? []) {
+  for (const category of state.categories) {
     const option = document.createElement("option");
     option.value = category.id;
     option.textContent = category.name;
@@ -3309,6 +4552,146 @@ function populateFormCategories(kind, selectedId = null) {
   }
   elements.activityCategory.replaceChildren(...options);
   elements.activityCategory.value = selectedId ?? "";
+}
+
+function readDraftForm(kind) {
+  return {
+    kind,
+    title: elements.eventName.value,
+    categoryId: elements.activityCategory.value,
+    date: elements.eventDate.value,
+    startTime: elements.startTime.value,
+    endTime: elements.endTime.value,
+    repeatMode: currentRepeatMode(),
+    repeatEvery: elements.repeatEvery.value,
+    repeatCount: elements.repeatCount.value,
+    reminderMode: currentReminderMode(),
+    reminderMinutesBefore: elements.reminderMinutesBefore.value,
+    deadlineDate: elements.todoDeadlineDate.value,
+    deadlineTime: elements.todoDeadlineTime.value,
+    todoReminderMode: currentTodoReminderMode(),
+    todoReminderDaysBefore: elements.todoReminderDaysBefore.value,
+    checkinReminderMode: currentCheckinReminderMode(),
+    checkinReminderTime: elements.checkinReminderTime.value,
+    notes: elements.eventNotes.value,
+  };
+}
+
+function refreshDraftStatus() {
+  const visible =
+    !state.editing &&
+    state.draftTouched &&
+    Boolean(state.activityDrafts[currentActivityKind()]);
+  elements.eventDraftStatus.hidden = !visible;
+  elements.discardDraftButton.hidden = !visible;
+  if (visible) {
+    elements.eventDraftStatus.textContent = "草稿已自动保存";
+  }
+}
+
+function flushActivityDraft(
+  kind = currentActivityKind(),
+  allowClosed = false,
+) {
+  if (
+    state.editing ||
+    (!allowClosed && !elements.eventDialog.open) ||
+    !state.draftTouched
+  ) {
+    return;
+  }
+  window.clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = null;
+  state.activityDrafts = writeActivityDraft(
+    kind,
+    readDraftForm(kind),
+  );
+  state.draftKind = kind;
+  refreshDraftStatus();
+}
+
+function scheduleActivityDraftSave() {
+  if (state.editing) {
+    return;
+  }
+  state.draftTouched = true;
+  elements.eventDraftStatus.hidden = false;
+  elements.eventDraftStatus.textContent = "正在保存草稿…";
+  elements.discardDraftButton.hidden = false;
+  window.clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = window.setTimeout(
+    flushActivityDraft,
+    300,
+  );
+}
+
+function clearSavedActivityDraft(kind) {
+  state.activityDrafts = removeActivityDraft(kind);
+  state.draftTouched = false;
+  elements.eventDraftStatus.hidden = true;
+  elements.discardDraftButton.hidden = true;
+}
+
+function applyDraftToForm(draft) {
+  if (!draft) {
+    return false;
+  }
+  const window = getScheduleWindow();
+  elements.eventName.value = draft.title;
+  elements.activityCategory.value = state.categories.some(
+    (category) => category.id === draft.categoryId,
+  )
+    ? draft.categoryId
+    : "";
+  elements.eventDate.value =
+    draft.date >= window.startDate ? draft.date : todayISO();
+  elements.startTime.value = draft.startTime;
+  elements.endTime.value = draft.endTime;
+  elements.repeatEvery.value = draft.repeatEvery || "1";
+  elements.repeatCount.value = draft.repeatCount || "1";
+  elements.reminderMinutesBefore.value =
+    draft.reminderMinutesBefore || "5";
+  elements.todoDeadlineDate.value =
+    draft.deadlineDate >= window.startDate
+      ? draft.deadlineDate
+      : todayISO();
+  elements.todoDeadlineTime.value = draft.deadlineTime || "18:00";
+  elements.todoReminderDaysBefore.value =
+    draft.todoReminderDaysBefore || "0";
+  elements.checkinReminderTime.value =
+    draft.checkinReminderTime || DEFAULT_CHECKIN_REMINDER_TIME;
+  elements.eventNotes.value = draft.notes;
+  setRepeatMode(draft.repeatMode);
+  setReminderMode(draft.reminderMode);
+  setTodoReminderMode(draft.todoReminderMode);
+  setCheckinReminderMode(draft.checkinReminderMode);
+  state.draftTouched = true;
+  refreshDraftStatus();
+  return true;
+}
+
+function clearNewActivityFields() {
+  const defaults = defaultTimes(todayISO());
+  elements.eventName.value = "";
+  elements.activityCategory.value = "";
+  elements.eventDate.value = todayISO();
+  elements.todoDeadlineDate.value = todayISO();
+  elements.todoDeadlineTime.value = "18:00";
+  elements.startTime.value = defaults.startTime;
+  elements.endTime.value = defaults.endTime;
+  elements.repeatEvery.value = "1";
+  elements.repeatCount.value = "1";
+  elements.reminderMinutesBefore.value = "5";
+  elements.todoReminderDaysBefore.value = "0";
+  elements.checkinReminderTime.value = DEFAULT_CHECKIN_REMINDER_TIME;
+  elements.eventNotes.value = "";
+  setReminderMode("none");
+  setRepeatMode("limited");
+  setTodoReminderMode("none");
+  setCheckinReminderMode("none");
+  state.draftTouched = false;
+  elements.eventDraftStatus.hidden = true;
+  elements.discardDraftButton.hidden = true;
 }
 
 function updateActivityFormUi() {
@@ -3357,8 +4740,12 @@ function openAddDialog(date = state.selectedDate) {
   }
 
   const defaults = defaultTimes(date);
+  const recent = mostRecentDraft(state.activityDrafts);
+  const initialKind = recent?.kind ?? "schedule";
   const restored = Boolean(state.restoringActivityId);
   state.editing = null;
+  state.draftKind = initialKind;
+  state.draftTouched = false;
   state.restoringActivityId = null;
   if (restored) {
     state.archiveMode = false;
@@ -3387,9 +4774,15 @@ function openAddDialog(date = state.selectedDate) {
   setRepeatMode("limited");
   setTodoReminderMode("none");
   setCheckinReminderMode("none");
-  setActivityKind("schedule");
+  setActivityKind(initialKind);
   updateReminderUi();
   elements.formError.hidden = true;
+  if (recent) {
+    applyDraftToForm(recent);
+  } else {
+    elements.eventDraftStatus.hidden = true;
+    elements.discardDraftButton.hidden = true;
+  }
   elements.eventDialog.showModal();
   requestAnimationFrame(() => elements.eventName.focus());
 }
@@ -3410,6 +4803,9 @@ function openEditDialog(series, occurrenceDate, { preferFuture = false } = {}) {
     scope: initialScope,
     archived: Boolean(series.archivedAt),
   };
+  state.draftTouched = false;
+  elements.eventDraftStatus.hidden = true;
+  elements.discardDraftButton.hidden = true;
   state.confirmedOverrideDiscard = false;
 
   const occurrence = occurrencesBetween(
@@ -3425,7 +4821,7 @@ function openEditDialog(series, occurrenceDate, { preferFuture = false } = {}) {
   state.activityKind = "schedule";
   setActivityKind("schedule");
   elements.eventName.value = displaySeries.title;
-  populateFormCategories("schedule", displaySeries.categoryId);
+  populateFormCategories(displaySeries.categoryId);
   elements.eventDate.min = todayISO();
   elements.eventDate.max = window.endDate;
   elements.eventDate.value = displaySeries.date;
@@ -3460,6 +4856,9 @@ function openTodoEditDialog(activity) {
     activityId: activity.id,
     archived: Boolean(activity.archivedAt),
   };
+  state.draftTouched = false;
+  elements.eventDraftStatus.hidden = true;
+  elements.discardDraftButton.hidden = true;
   state.confirmedOverrideDiscard = false;
   elements.eventForm.reset();
   elements.eventDialogKicker.textContent = "编辑待办";
@@ -3469,9 +4868,12 @@ function openTodoEditDialog(activity) {
     activityId: activity.id,
     archived: Boolean(activity.archivedAt),
   };
+  state.draftTouched = false;
+  elements.eventDraftStatus.hidden = true;
+  elements.discardDraftButton.hidden = true;
   setActivityKind("todo");
   elements.eventName.value = activity.title;
-  populateFormCategories("todo", activity.categoryId);
+  populateFormCategories(activity.categoryId);
   elements.todoDeadlineDate.min = todayISO();
   elements.todoDeadlineDate.max = getScheduleWindow().endDate;
   elements.todoDeadlineDate.value = activity.deadlineDate;
@@ -3497,7 +4899,7 @@ function openCheckinEditDialog(activity) {
   elements.eventDialogKicker.textContent = "编辑打卡";
   elements.eventDialogTitle.textContent = "编辑打卡";
   setActivityKind("checkin");
-  populateFormCategories("checkin", activity.categoryId);
+  populateFormCategories(activity.categoryId);
   elements.eventName.value = activity.title;
   elements.eventNotes.value = activity.notes;
   elements.checkinReminderTime.value =
@@ -3642,6 +5044,7 @@ function handleScheduleSubmit() {
     `${editingSeries?.year ?? Number(todayISO().slice(0, 4))}-01-01`,
   );
   const input = readFormInput();
+  const wasEditing = Boolean(state.editing);
   const singleEdit =
     state.editing && currentEditScope() === "single";
   const minimumDate = singleEdit
@@ -3773,6 +5176,9 @@ function handleScheduleSubmit() {
   state.editing = null;
   state.restoringActivityId = null;
   state.confirmedOverrideDiscard = false;
+  if (!wasEditing) {
+    clearSavedActivityDraft("schedule");
+  }
   persistEvents();
   elements.eventDialog.close();
   render();
@@ -3824,6 +5230,7 @@ function handleTodoSubmit() {
     candidate.deadlineDate,
     timeToMinutes(candidate.deadlineTime) - 60,
     existing ? "待办已更新" : "待办已添加",
+    existing ? null : "todo",
   );
 }
 
@@ -3879,10 +5286,20 @@ function handleCheckinSubmit() {
           : activity,
       )
     : [...state.events, candidate];
-  finishActivitySave(todayISO(), undefined, existing ? "打卡已更新" : "打卡已添加");
+  finishActivitySave(
+    todayISO(),
+    undefined,
+    existing ? "打卡已更新" : "打卡已添加",
+    existing ? null : "checkin",
+  );
 }
 
-function finishActivitySave(date, scrollMinutes, message) {
+function finishActivitySave(
+  date,
+  scrollMinutes,
+  message,
+  newActivityKind = null,
+) {
   const restored = Boolean(state.restoringActivityId);
   state.selectedDate = date;
   state.monthCursor = startOfMonth(date);
@@ -3896,6 +5313,9 @@ function finishActivitySave(date, scrollMinutes, message) {
     state.archiveMode = false;
   }
   state.confirmedOverrideDiscard = false;
+  if (newActivityKind) {
+    clearSavedActivityDraft(newActivityKind);
+  }
   persistEvents();
   elements.eventDialog.close();
   render();
@@ -4113,9 +5533,8 @@ function confirmArchive() {
 }
 
 function renderCategoryManager() {
-  const kind = elements.categoryKindSelect.value;
   const fragment = document.createDocumentFragment();
-  const items = state.categories[kind] ?? [];
+  const items = state.categories;
   if (items.length === 0) {
     fragment.append(createListEmpty("还没有自定义分类"));
   }
@@ -4135,7 +5554,6 @@ function renderCategoryManager() {
       }
       state.categories = renameCategory(
         state.categories,
-        kind,
         category.id,
         nextName,
       );
@@ -4150,7 +5568,6 @@ function renderCategoryManager() {
       snapshotBefore("删除分类前");
       state.categories = deleteCategory(
         state.categories,
-        kind,
         category.id,
       );
       state.events = state.events.map((activity) =>
@@ -4169,6 +5586,177 @@ function renderCategoryManager() {
     fragment.append(row);
   }
   elements.categoryList.replaceChildren(fragment);
+}
+
+function selectedActivities() {
+  return state.events.filter((activity) =>
+    state.selectedActivityIds.has(activity.id),
+  );
+}
+
+function openBulkActionsDialog() {
+  const selected = selectedActivities();
+  if (selected.length === 0) {
+    return;
+  }
+  const canPause = selected.every(
+    (activity) =>
+      ["schedule", "checkin"].includes(activity.kind) &&
+      !isActivityPaused(activity),
+  );
+  elements.bulkDialogSummary.textContent =
+    `已选择 ${selected.length} 个活动系列。操作只影响当前选中项目，不会处理筛选结果之外的活动。`;
+  elements.bulkPauseButton.disabled = !canPause;
+  elements.bulkPauseButton.title = canPause
+    ? ""
+    : "仅当所选项目都是未暂停的定期或打卡时才可批量暂停";
+  elements.bulkDialog.showModal();
+}
+
+function openBulkCategoryDialog() {
+  const options = [document.createElement("option")];
+  options[0].value = "";
+  options[0].textContent = "未分类";
+  for (const category of state.categories) {
+    const option = document.createElement("option");
+    option.value = category.id;
+    option.textContent = category.name;
+    options.push(option);
+  }
+  elements.bulkCategorySelect.replaceChildren(...options);
+  elements.bulkDialog.close();
+  elements.bulkCategoryDialog.showModal();
+}
+
+function finishBulkAction(message) {
+  state.selectionMode = false;
+  state.selectedActivityIds.clear();
+  state.pendingBulkAction = null;
+  persistEvents();
+  render();
+  showToast(message);
+}
+
+function confirmBulkCategory() {
+  const categoryId = elements.bulkCategorySelect.value || null;
+  const ids = new Set(state.selectedActivityIds);
+  snapshotBefore("批量归类前");
+  state.events = state.events.map((activity) =>
+    ids.has(activity.id)
+      ? {
+          ...activity,
+          categoryId,
+          updatedAt: new Date().toISOString(),
+        }
+      : activity,
+  );
+  elements.bulkCategoryDialog.close();
+  finishBulkAction(`已更新 ${ids.size} 个活动的分类`);
+}
+
+function requestBulkAction(action) {
+  const selected = selectedActivities();
+  const count = selected.length;
+  if (count === 0) {
+    return;
+  }
+  const labels = {
+    pause: "批量暂停",
+    archive: "批量归档",
+    delete: "永久删除",
+  };
+  state.pendingBulkAction = action;
+  elements.bulkDialog.close();
+  elements.bulkConfirmTitle.textContent = `${labels[action]}？`;
+  elements.bulkConfirmMessage.textContent =
+    action === "delete"
+      ? `将永久删除 ${count} 个活动系列及其历史，无法撤销。`
+      : action === "archive"
+        ? `将归档 ${count} 个活动系列。待办和打卡不会因此标记为已完成。`
+        : `将从今天起暂停 ${count} 个定期或打卡项目。`;
+  elements.confirmBulkActionButton.textContent =
+    action === "delete" ? "确认永久删除" : "确认";
+  elements.confirmBulkActionButton.classList.toggle(
+    "danger-solid-button",
+    action === "delete",
+  );
+  elements.bulkConfirmDialog.showModal();
+}
+
+function openGenericConfirmation({
+  title,
+  message,
+  confirmText,
+  danger = false,
+  action,
+}) {
+  state.pendingGenericConfirm = action;
+  elements.bulkConfirmTitle.textContent = title;
+  elements.bulkConfirmMessage.textContent = message;
+  elements.confirmBulkActionButton.textContent = confirmText;
+  elements.confirmBulkActionButton.classList.toggle(
+    "danger-solid-button",
+    danger,
+  );
+  elements.bulkConfirmDialog.showModal();
+}
+
+function applyBulkAction() {
+  const action = state.pendingBulkAction;
+  const ids = new Set(state.selectedActivityIds);
+  if (!action || ids.size === 0) {
+    return;
+  }
+  snapshotBefore("批量操作前");
+  const now = new Date().toISOString();
+  if (action === "delete") {
+    state.events = state.events.filter(
+      (activity) => !ids.has(activity.id),
+    );
+  } else if (action === "archive") {
+    state.events = state.events.map((activity) =>
+      ids.has(activity.id)
+        ? {
+            ...activity,
+            archivedAt: now,
+            archiveReason: "批量归档",
+            updatedAt: now,
+          }
+        : activity,
+    );
+  } else if (action === "pause") {
+    state.events = state.events.map((activity) => {
+      if (!ids.has(activity.id)) {
+        return activity;
+      }
+      if (activity.kind === "checkin") {
+        return pauseCheckin(activity, todayISO());
+      }
+      return pauseSeries(
+        [activity],
+        activity.id,
+        todayISO(),
+      )[0];
+    });
+  }
+  elements.bulkConfirmDialog.close();
+  const messages = {
+    delete: "已永久删除选中活动",
+    archive: "选中活动已归档",
+    pause: "选中活动已暂停",
+  };
+  finishBulkAction(messages[action]);
+}
+
+function handleBulkConfirm() {
+  if (state.pendingGenericConfirm) {
+    const action = state.pendingGenericConfirm;
+    state.pendingGenericConfirm = null;
+    elements.bulkConfirmDialog.close();
+    action();
+    return;
+  }
+  applyBulkAction();
 }
 
 function openCheckinCalendar(
@@ -4290,57 +5878,96 @@ function openMigrationDialog() {
 function renderMigrationRows() {
   const fragment = document.createDocumentFragment();
   const targetYear = migrationTargetYear();
-  const candidates = migrationCandidates(state.events, targetYear);
-  if (candidates.length === 0) {
+  const groups = migrationCategoryGroups(
+    state.events,
+    state.categories,
+    targetYear,
+  );
+  if (groups.length === 0) {
     fragment.append(
       createListEmpty("没有可迁移的定期或打卡项目"),
     );
   }
-  for (const activity of candidates) {
-    const row = document.createElement("label");
-    const checkbox = document.createElement("input");
-    const copy = document.createElement("span");
-    const title = document.createElement("strong");
-    const detail = document.createElement("small");
-    const edit = document.createElement("button");
-    row.className = "migration-row";
-    checkbox.type = "checkbox";
-    checkbox.checked = state.migrationSelections.get(activity.id) !== false;
-    checkbox.addEventListener("change", () => {
-      state.migrationSelections.set(activity.id, checkbox.checked);
-    });
-    title.textContent = activity.title;
-    detail.textContent =
-      activity.kind === "schedule"
-        ? `${isActivityPaused(activity) ? "已暂停 · " : ""}` +
-          `${formatRecurrenceRule(activity)} · ${activity.startTime}–${activity.endTime}`
-        : `打卡项目 · 今年 ${activity.checkInDates.length} 次` +
-          (isActivityPaused(activity) ? " · 已暂停" : "");
-    copy.append(title, detail);
-    edit.type = "button";
-    edit.className = "activity-resume";
-    edit.textContent = "编辑";
-    edit.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      elements.migrationDialog.close();
-      if (activity.kind === "schedule") {
-        const next = occurrencesBetween(
-          [activity],
-          activity.date,
-          `${activity.year}-12-31`,
-        )[0];
-        if (next) {
-          openEditDialog(next.originalSeries, next.originalDate, {
-            preferFuture: true,
-          });
-        }
-      } else {
-        openCheckinEditDialog(activity);
+  for (const group of groups) {
+    const section = document.createElement("section");
+    const heading = document.createElement("label");
+    const groupCheckbox = document.createElement("input");
+    const groupTitle = document.createElement("strong");
+    const groupCount = document.createElement("small");
+    const list = document.createElement("div");
+    section.className = "migration-category";
+    heading.className = "migration-category-heading";
+    groupCheckbox.type = "checkbox";
+    const selectedCount = group.activities.filter(
+      (activity) =>
+        state.migrationSelections.get(activity.id) !== false,
+    ).length;
+    groupCheckbox.checked = selectedCount === group.activities.length;
+    groupCheckbox.indeterminate =
+      selectedCount > 0 && selectedCount < group.activities.length;
+    groupCheckbox.addEventListener("change", () => {
+      for (const activity of group.activities) {
+        state.migrationSelections.set(
+          activity.id,
+          groupCheckbox.checked,
+        );
       }
+      renderMigrationRows();
     });
-    row.append(checkbox, copy, edit);
-    fragment.append(row);
+    groupTitle.textContent = group.categoryName;
+    groupCount.textContent = `${group.activities.length} 项`;
+    heading.append(groupCheckbox, groupTitle, groupCount);
+    list.className = "migration-list";
+    for (const activity of group.activities) {
+      const row = document.createElement("label");
+      const checkbox = document.createElement("input");
+      const copy = document.createElement("span");
+      const title = document.createElement("strong");
+      const detail = document.createElement("small");
+      const edit = document.createElement("button");
+      row.className = "migration-row";
+      checkbox.type = "checkbox";
+      checkbox.checked =
+        state.migrationSelections.get(activity.id) !== false;
+      checkbox.addEventListener("change", () => {
+        state.migrationSelections.set(activity.id, checkbox.checked);
+        renderMigrationRows();
+      });
+      title.textContent = activity.title;
+      detail.textContent =
+        activity.kind === "schedule"
+          ? `${isActivityPaused(activity) ? "已暂停 · " : ""}` +
+            `${formatRecurrenceRule(activity)} · ${activity.startTime}–${activity.endTime}`
+          : `打卡项目 · 今年 ${activity.checkInDates.length} 次` +
+            (isActivityPaused(activity) ? " · 已暂停" : "");
+      copy.append(title, detail);
+      edit.type = "button";
+      edit.className = "activity-resume";
+      edit.textContent = "编辑";
+      edit.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        elements.migrationDialog.close();
+        if (activity.kind === "schedule") {
+          const next = occurrencesBetween(
+            [activity],
+            activity.date,
+            `${activity.year}-12-31`,
+          )[0];
+          if (next) {
+            openEditDialog(next.originalSeries, next.originalDate, {
+              preferFuture: true,
+            });
+          }
+        } else {
+          openCheckinEditDialog(activity);
+        }
+      });
+      row.append(checkbox, copy, edit);
+      list.append(row);
+    }
+    section.append(heading, list);
+    fragment.append(section);
   }
   elements.migrationList.replaceChildren(fragment);
 }
@@ -4525,11 +6152,131 @@ function bindEvents() {
   elements.monthNavButton.addEventListener("click", () =>
     requestReviewLeave(() => setView("month")),
   );
+  elements.focusNavButton.addEventListener("click", () =>
+    requestReviewLeave(() => setView("focus")),
+  );
   elements.reviewNavButton.addEventListener("click", () =>
     requestReviewLeave(() => setView("review")),
   );
   elements.activityNavButton.addEventListener("click", () =>
     requestReviewLeave(() => setView("activity")),
+  );
+
+  elements.helpButton.addEventListener("click", openTutorial);
+  elements.closeTutorialDialog.addEventListener("click", () => {
+    elements.tutorialDialog.close();
+  });
+  elements.addFocusProjectButton.addEventListener("click", () =>
+    openFocusProjectDialog(),
+  );
+  elements.addFocusFlowButton.addEventListener("click", () =>
+    openFocusFlowDialog(),
+  );
+  elements.focusProjectForm.addEventListener(
+    "submit",
+    handleFocusProjectSubmit,
+  );
+  for (const button of [
+    elements.cancelFocusProjectButton,
+    document.querySelector("#cancelFocusProjectButton2"),
+  ]) {
+    button?.addEventListener("click", () => {
+      state.editingFocusProjectId = null;
+      elements.focusProjectDialog.close();
+    });
+  }
+  elements.focusFlowForm.addEventListener(
+    "submit",
+    handleFocusFlowSubmit,
+  );
+  for (const button of [
+    elements.cancelFocusFlowButton,
+    document.querySelector("#cancelFocusFlowButton2"),
+  ]) {
+    button?.addEventListener("click", () => {
+      state.editingFocusFlowId = null;
+      state.focusFlowDraftSteps = [];
+      elements.focusFlowDialog.close();
+    });
+  }
+  elements.focusFlowStepSelect.addEventListener("change", () => {
+    const project = focusProjectById(elements.focusFlowStepSelect.value);
+    elements.focusFlowStepMinutes.value = String(
+      project?.durationMinutes ?? 25,
+    );
+  });
+  elements.addFocusFlowStepButton.addEventListener(
+    "click",
+    addFocusFlowStep,
+  );
+  elements.configureFocusPasswordButton.addEventListener(
+    "click",
+    openFocusPasswordDialog,
+  );
+  elements.focusPasswordForm.addEventListener(
+    "submit",
+    handleFocusPasswordSubmit,
+  );
+  elements.cancelFocusPasswordButton.addEventListener("click", () => {
+    elements.focusPasswordDialog.close();
+  });
+  document
+    .querySelector("#cancelFocusPasswordButton2")
+    ?.addEventListener("click", () => {
+      elements.focusPasswordDialog.close();
+    });
+  elements.clearFocusPasswordButton.addEventListener(
+    "click",
+    openFocusPasswordResetDialog,
+  );
+  elements.cancelFocusPasswordResetButton.addEventListener(
+    "click",
+    () => {
+      elements.focusPasswordResetDialog.close();
+    },
+  );
+  elements.confirmFocusPasswordResetButton.addEventListener(
+    "click",
+    confirmClearFocusPassword,
+  );
+  elements.addFocusQuoteButton.addEventListener("click", addFocusQuote);
+  elements.focusQuoteInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void addFocusQuote();
+    }
+  });
+  elements.focusWallpaperInput.addEventListener(
+    "change",
+    handleFocusWallpaperUpload,
+  );
+  elements.exitFocusButton.addEventListener(
+    "click",
+    openFocusExitDialog,
+  );
+  elements.cancelFocusExitButton.addEventListener("click", () => {
+    elements.focusExitDialog.close();
+    resumeFocusRun();
+  });
+  elements.confirmFocusExitButton.addEventListener(
+    "click",
+    confirmFocusExit,
+  );
+  elements.continueFocusButton.addEventListener(
+    "click",
+    resumeFocusRun,
+  );
+  elements.endPausedFocusButton.addEventListener(
+    "click",
+    openFocusExitDialog,
+  );
+  elements.resumeStoredFocusButton.addEventListener(
+    "click",
+    resumeStoredFocus,
+  );
+  elements.discardStoredFocusButton.addEventListener(
+    "click",
+    discardStoredFocus,
   );
 
   elements.previousReviewDayButton.addEventListener("click", () => {
@@ -4716,19 +6463,44 @@ function bindEvents() {
   });
 
   elements.closeEventDialog.addEventListener("click", () => {
+    flushActivityDraft();
     state.confirmedOverrideDiscard = false;
     elements.eventDialog.close();
   });
   elements.cancelEventButton.addEventListener("click", () => {
+    flushActivityDraft();
     state.confirmedOverrideDiscard = false;
     elements.eventDialog.close();
   });
+  elements.discardDraftButton.addEventListener("click", () => {
+    const kind = currentActivityKind();
+    state.activityDrafts = removeActivityDraft(kind);
+    state.draftTouched = false;
+    state.editing = null;
+    elements.eventDialog.close();
+    showToast("草稿已丢弃");
+  });
   elements.eventDialog.addEventListener("close", () => {
+    if (!state.editing) {
+      flushActivityDraft(state.draftKind ?? currentActivityKind(), true);
+    }
     state.editing = null;
     state.restoringActivityId = null;
     state.confirmedOverrideDiscard = false;
+    state.draftKind = null;
   });
   elements.eventForm.addEventListener("submit", handleFormSubmit);
+  for (const eventName of ["input", "change"]) {
+    elements.eventForm.addEventListener(eventName, (event) => {
+      if (
+        state.editing ||
+        event.target.name === "activityKind"
+      ) {
+        return;
+      }
+      scheduleActivityDraftSave();
+    });
+  }
   elements.repeatModeInputs.forEach((input) => {
     input.addEventListener("change", () => {
       updateRepeatModeUI();
@@ -4737,7 +6509,20 @@ function bindEvents() {
   });
   elements.activityKindInputs.forEach((input) => {
     input.addEventListener("change", () => {
+      if (!state.editing && state.draftTouched) {
+        flushActivityDraft(state.draftKind ?? currentActivityKind());
+      }
       setActivityKind(input.value);
+      if (!state.editing) {
+        state.draftKind = input.value;
+        const draft = state.activityDrafts[input.value];
+        if (draft) {
+          applyDraftToForm(draft);
+        } else {
+          clearNewActivityFields();
+          updateActivityFormUi();
+        }
+      }
     });
   });
   elements.editScopeInputs.forEach((input) => {
@@ -4828,16 +6613,81 @@ function bindEvents() {
 
   elements.activitySearch.addEventListener("input", () => {
     state.activityQuery = elements.activitySearch.value;
+    if (state.selectionMode) {
+      state.selectionMode = false;
+      state.selectedActivityIds.clear();
+    }
     if (state.view === "activity") {
       renderActivities(getScheduleWindow());
     }
   });
   elements.activityCategoryFilter.addEventListener("change", () => {
     state.activityCategoryFilter = elements.activityCategoryFilter.value;
+    state.selectionMode = false;
+    state.selectedActivityIds.clear();
     render();
   });
+  elements.activitySelectModeButton.addEventListener("click", () => {
+    state.selectionMode = !state.selectionMode;
+    state.selectedActivityIds.clear();
+    renderActivities(getScheduleWindow());
+  });
+  elements.clearActivitySelectionButton.addEventListener("click", () => {
+    state.selectionMode = false;
+    state.selectedActivityIds.clear();
+    renderActivities(getScheduleWindow());
+  });
+  elements.selectAllActivitiesButton.addEventListener("click", () => {
+    const allVisibleSelected =
+      state.visibleActivityIds.length > 0 &&
+      state.visibleActivityIds.every((id) =>
+        state.selectedActivityIds.has(id),
+      );
+    state.selectedActivityIds = allVisibleSelected
+      ? new Set()
+      : new Set(state.visibleActivityIds);
+    renderActivities(getScheduleWindow());
+  });
+  elements.openBulkActionsButton.addEventListener(
+    "click",
+    openBulkActionsDialog,
+  );
+  elements.cancelBulkDialogButton.addEventListener("click", () => {
+    elements.bulkDialog.close();
+  });
+  elements.bulkCategorizeButton.addEventListener(
+    "click",
+    openBulkCategoryDialog,
+  );
+  elements.bulkPauseButton.addEventListener("click", () =>
+    requestBulkAction("pause"),
+  );
+  elements.bulkArchiveButton.addEventListener("click", () =>
+    requestBulkAction("archive"),
+  );
+  elements.bulkDeleteButton.addEventListener("click", () =>
+    requestBulkAction("delete"),
+  );
+  elements.cancelBulkCategoryButton.addEventListener("click", () => {
+    elements.bulkCategoryDialog.close();
+  });
+  elements.confirmBulkCategoryButton.addEventListener(
+    "click",
+    confirmBulkCategory,
+  );
+  elements.cancelBulkConfirmButton.addEventListener("click", () => {
+    state.pendingBulkAction = null;
+    state.pendingGenericConfirm = null;
+    elements.bulkConfirmDialog.close();
+  });
+  elements.confirmBulkActionButton.addEventListener(
+    "click",
+    handleBulkConfirm,
+  );
   elements.archiveToggleButton.addEventListener("click", () => {
     state.archiveMode = !state.archiveMode;
+    state.selectionMode = false;
+    state.selectedActivityIds.clear();
     if (!state.archiveMode) {
       state.view = "activity";
     }
@@ -4848,25 +6698,18 @@ function bindEvents() {
     render();
   });
   elements.manageCategoriesButton.addEventListener("click", () => {
-    elements.categoryKindSelect.value = "schedule";
     renderCategoryManager();
     elements.categoryDialog.showModal();
   });
   elements.closeCategoryDialog.addEventListener("click", () => {
     elements.categoryDialog.close();
   });
-  elements.categoryKindSelect.addEventListener(
-    "change",
-    renderCategoryManager,
-  );
   elements.addCategoryButton.addEventListener("click", () => {
-    const kind = elements.categoryKindSelect.value;
     const next = addCategory(
       state.categories,
-      kind,
       elements.newCategoryName.value,
     );
-    if (next[kind].length === state.categories[kind].length) {
+    if (next.length === state.categories.length) {
       showToast("请输入不重复的分类名称");
       return;
     }
@@ -4930,6 +6773,15 @@ function bindEvents() {
   );
 
   window.addEventListener("beforeunload", (event) => {
+    if (elements.eventDialog.open && !state.editing) {
+      flushActivityDraft(
+        state.draftKind ?? currentActivityKind(),
+        true,
+      );
+    }
+    if (state.focusRun?.status === "running") {
+      persistFocusRunProgress();
+    }
     if (state.view === "review" && state.reviewDirty) {
       event.preventDefault();
       event.returnValue = "";
@@ -4945,6 +6797,11 @@ function bindEvents() {
         loaded.yearMigrationCompletedFor;
       state.reviewEntries = loaded.reviewEntries;
       state.reviewReminder = loaded.reviewReminder;
+      state.focusProjects = loaded.focusProjects;
+      state.focusFlows = loaded.focusFlows;
+      state.focusQuotes = loaded.focusQuotes;
+      state.focusWallpapers = loaded.focusWallpapers;
+      state.focusPassword = loaded.focusPassword;
       render();
     } else if (nativeApp && event.key === NATIVE_STORAGE_KEY) {
       const loaded = readNativeState();
@@ -4957,6 +6814,11 @@ function bindEvents() {
           loaded.state.yearMigrationCompletedFor;
         state.reviewEntries = loaded.state.reviewEntries;
         state.reviewReminder = loaded.state.reviewReminder;
+        state.focusProjects = loaded.state.focusProjects;
+        state.focusFlows = loaded.state.focusFlows;
+        state.focusQuotes = loaded.state.focusQuotes;
+        state.focusWallpapers = loaded.state.focusWallpapers;
+        state.focusPassword = loaded.state.focusPassword;
         state.storageCorrupt = false;
       } else if (loaded.status === "corrupt") {
         state.storageCorrupt = true;
@@ -4970,8 +6832,13 @@ function bindEvents() {
   });
 
   document.addEventListener("visibilitychange", () => {
+    if (document.hidden && state.focusRun?.status === "running") {
+      pauseFocusRun({ automatic: true });
+    }
     if (!document.hidden && (!nativeApp || state.authenticated)) {
-      render();
+      if (!state.focusRun) {
+        render();
+      }
       void refreshNativeNotifications();
       void syncNativeWidgetSnapshot(state.events);
       void handleWidgetLaunch();
@@ -5009,6 +6876,9 @@ state.events = finalizePreviousYears(
   Number(todayISO().slice(0, 4)),
 );
 render({ scrollTargetMinutes: undefined });
+if (!nativeApp) {
+  persistEvents();
+}
 preparePersistentStorage();
 registerServiceWorker();
 if (nativeApp) {
@@ -5043,6 +6913,9 @@ if (nativeApp) {
   globalThis.DailyRouteNative?.App?.addListener?.(
     "appStateChange",
     ({ isActive }) => {
+      if (!isActive && state.focusRun?.status === "running") {
+        pauseFocusRun({ automatic: true });
+      }
       if (isActive && state.authenticated) {
         void refreshNativeNotifications();
         void handleWidgetLaunch();
@@ -5051,9 +6924,29 @@ if (nativeApp) {
       }
     },
   );
+  globalThis.DailyRouteNative?.App?.addListener?.(
+    "backButton",
+    ({ canGoBack }) => {
+      if (state.focusRun) {
+        openFocusExitDialog();
+        return;
+      }
+      if (canGoBack) {
+        window.history.back();
+      } else {
+        void globalThis.DailyRouteNative?.App?.exitApp?.();
+      }
+    },
+  );
 }
 
 requestAnimationFrame(() => {
+  if (
+    (!nativeApp || state.authenticated) &&
+    maybeRestoreFocusSession()
+  ) {
+    return;
+  }
   if ((!nativeApp || state.authenticated) && migrationIsMandatory()) {
     openMigrationDialog();
   } else {

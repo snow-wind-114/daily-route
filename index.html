@@ -125,6 +125,18 @@
             </svg>
           </button>
           <button
+            class="icon-button"
+            id="helpButton"
+            type="button"
+            aria-label="使用教程"
+            title="使用教程"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="8.5" />
+              <path d="M9.8 9.2a2.5 2.5 0 0 1 4.8 1c0 1.8-2.4 2-2.6 3.6M12 17.5h.01" />
+            </svg>
+          </button>
+          <button
             class="icon-button native-only"
             id="accountButton"
             type="button"
@@ -291,6 +303,99 @@
             <span><i aria-hidden="true"></i>有活动</span>
             <span>刻度每格 2 小时 · 右上角红字为待办截止数</span>
           </div>
+        </section>
+
+        <section
+          class="focus-view"
+          id="focusView"
+          aria-labelledby="viewTitle"
+          hidden
+        >
+          <div class="focus-summary-card">
+            <div>
+              <span>累计专注</span>
+              <strong id="focusTotalTime">0 分钟</strong>
+            </div>
+            <button
+              class="secondary-button"
+              id="configureFocusPasswordButton"
+              type="button"
+            >
+              专注密码
+            </button>
+          </div>
+          <p class="focus-password-status" id="focusPasswordStatus">
+            专注密码未设置。
+          </p>
+
+          <div class="focus-toolbar">
+            <button
+              class="primary-button"
+              id="addFocusProjectButton"
+              type="button"
+            >
+              新建单次项目
+            </button>
+            <button
+              class="secondary-button"
+              id="addFocusFlowButton"
+              type="button"
+            >
+              新建周期专注
+            </button>
+          </div>
+
+          <section class="focus-section">
+            <div class="section-heading">
+              <h2>单次项目</h2>
+            </div>
+            <div class="focus-project-list" id="focusProjectList"></div>
+          </section>
+
+          <section class="focus-section">
+            <div class="section-heading">
+              <h2>周期专注</h2>
+              <span>一次启动，按顺序完成</span>
+            </div>
+            <div class="focus-flow-list" id="focusFlowList"></div>
+          </section>
+
+          <section class="focus-library">
+            <div class="section-heading">
+              <h2>专注语句</h2>
+            </div>
+            <div class="focus-library-add">
+              <input
+                id="focusQuoteInput"
+                maxlength="200"
+                placeholder="添加一句想看到的话"
+              />
+              <button
+                class="secondary-button"
+                id="addFocusQuoteButton"
+                type="button"
+              >
+                添加
+              </button>
+            </div>
+            <div class="focus-quote-list" id="focusQuoteList"></div>
+          </section>
+
+          <section class="focus-library">
+            <div class="section-heading">
+              <h2>专注壁纸</h2>
+              <span>最多 12 张，仅保存在本机</span>
+            </div>
+            <label class="focus-wallpaper-picker">
+              <span>添加本地图片</span>
+              <input
+                id="focusWallpaperInput"
+                type="file"
+                accept="image/*"
+              />
+            </label>
+            <div class="focus-wallpaper-list" id="focusWallpaperList"></div>
+          </section>
         </section>
 
         <section
@@ -500,8 +605,36 @@
             <button class="secondary-button" id="manageCategoriesButton" type="button">
               分类管理
             </button>
+            <button class="secondary-button" id="activitySelectModeButton" type="button">
+              多选
+            </button>
             <button class="secondary-button" id="archiveToggleButton" type="button">
               查看归档
+            </button>
+          </div>
+
+          <div class="bulk-selection-bar" id="bulkSelectionBar" hidden>
+            <strong id="bulkSelectionCount">已选 0 项</strong>
+            <button
+              class="text-button"
+              id="selectAllActivitiesButton"
+              type="button"
+            >
+              全选当前结果
+            </button>
+            <button
+              class="text-button"
+              id="clearActivitySelectionButton"
+              type="button"
+            >
+              退出多选
+            </button>
+            <button
+              class="primary-button"
+              id="openBulkActionsButton"
+              type="button"
+            >
+              批量操作
             </button>
           </div>
 
@@ -602,6 +735,18 @@
             <path d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01" />
           </svg>
           <span>本月</span>
+        </button>
+        <button
+          class="nav-button"
+          id="focusNavButton"
+          type="button"
+          data-view="focus"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <circle cx="12" cy="13" r="7" />
+            <path d="M12 9v4l2.5 1.5M9 3h6M12 3v3" />
+          </svg>
+          <span>专注</span>
         </button>
         <button
           class="nav-button"
@@ -941,6 +1086,9 @@
           <p class="edit-scope-note" id="editScopeNote" hidden>
             只修改所选这一次，其他安排保持不变。
           </p>
+          <p class="draft-status" id="eventDraftStatus" hidden>
+            草稿已自动保存
+          </p>
           <p class="form-error" id="formError" role="alert" hidden></p>
         </div>
 
@@ -968,6 +1116,14 @@
             hidden
           >
             删除整个活动
+          </button>
+          <button
+            class="secondary-button"
+            id="discardDraftButton"
+            type="button"
+            hidden
+          >
+            丢弃草稿
           </button>
           <span class="footer-spacer"></span>
           <button class="secondary-button" id="cancelEventButton" type="button">
@@ -1303,20 +1459,12 @@
       <div class="category-sheet">
         <div class="account-header">
           <div>
-            <p class="sheet-kicker">按活动类型管理</p>
+            <p class="sheet-kicker">所有活动共用</p>
             <h2>分类管理</h2>
           </div>
           <button class="close-button" id="closeCategoryDialog" type="button" aria-label="关闭">
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg>
           </button>
-        </div>
-        <div class="field">
-          <span>活动类型</span>
-          <select id="categoryKindSelect">
-            <option value="schedule">定期</option>
-            <option value="todo">待办</option>
-            <option value="checkin">打卡</option>
-          </select>
         </div>
         <div class="category-list" id="categoryList"></div>
         <div class="category-add-row">
@@ -1485,6 +1633,264 @@
         </div>
       </div>
     </dialog>
+
+    <dialog class="confirm-dialog" id="bulkDialog">
+      <div class="confirm-sheet">
+        <div class="account-header">
+          <div>
+            <p class="sheet-kicker">当前筛选结果</p>
+            <h2>批量操作</h2>
+          </div>
+          <button class="close-button" id="cancelBulkDialogButton" type="button" aria-label="关闭">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+        <p class="recovery-note" id="bulkDialogSummary"></p>
+        <div class="bulk-action-grid">
+          <button class="secondary-button" id="bulkCategorizeButton" type="button">归入分类</button>
+          <button class="secondary-button" id="bulkPauseButton" type="button">批量暂停</button>
+          <button class="secondary-button" id="bulkArchiveButton" type="button">批量归档</button>
+          <button class="danger-button" id="bulkDeleteButton" type="button">永久删除</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="bulkCategoryDialog">
+      <div class="confirm-sheet">
+        <h2>批量归类</h2>
+        <label class="field">
+          <span>目标分类</span>
+          <select id="bulkCategorySelect">
+            <option value="">未分类</option>
+          </select>
+        </label>
+        <div class="confirm-actions">
+          <button class="secondary-button" id="cancelBulkCategoryButton" type="button">取消</button>
+          <button class="primary-button" id="confirmBulkCategoryButton" type="button">确认归类</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="bulkConfirmDialog">
+      <div class="confirm-sheet">
+        <h2 id="bulkConfirmTitle">确认批量操作？</h2>
+        <p id="bulkConfirmMessage"></p>
+        <div class="confirm-actions">
+          <button class="secondary-button" id="cancelBulkConfirmButton" type="button">取消</button>
+          <button class="primary-button" id="confirmBulkActionButton" type="button">确认</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog tutorial-dialog" id="tutorialDialog">
+      <div class="tutorial-sheet">
+        <div class="account-header">
+          <div>
+            <p class="sheet-kicker">离线手册</p>
+            <h2>使用教程</h2>
+          </div>
+          <button class="close-button" id="closeTutorialDialog" type="button" aria-label="关闭">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+        <div class="tutorial-topic-list" id="tutorialTopicList"></div>
+        <article class="tutorial-article" id="tutorialArticle"></article>
+      </div>
+    </dialog>
+
+    <dialog class="event-dialog" id="focusProjectDialog">
+      <form class="sheet compact-sheet" id="focusProjectForm" novalidate>
+        <div class="sheet-header">
+          <div>
+            <p class="sheet-kicker">单次项目</p>
+            <h2 id="focusProjectDialogTitle">新建单次项目</h2>
+          </div>
+          <button class="close-button" id="cancelFocusProjectButton" type="button" aria-label="关闭">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+        <div class="form-fields focus-form-fields">
+          <div class="field field-full">
+            <span class="field-label">类型</span>
+            <div class="segmented-control" role="radiogroup" aria-label="专注项目类型">
+              <label>
+                <input type="radio" name="focusProjectType" value="focus" checked />
+                <span>专注</span>
+              </label>
+              <label>
+                <input type="radio" name="focusProjectType" value="rest" />
+                <span>休息</span>
+              </label>
+            </div>
+          </div>
+          <label class="field field-full">
+            <span>名称</span>
+            <input id="focusProjectName" maxlength="40" required placeholder="例如：背单词" />
+          </label>
+          <label class="field field-full">
+            <span>时间</span>
+            <span class="input-with-suffix">
+              <input id="focusProjectMinutes" type="number" min="1" max="240" step="1" value="25" inputmode="numeric" required />
+              <i>分钟</i>
+            </span>
+          </label>
+          <label class="field field-full">
+            <span>备注 <small>选填</small></span>
+            <textarea id="focusProjectNotes" maxlength="500" rows="3" placeholder="写下专注目标或休息要求"></textarea>
+          </label>
+          <p class="form-error" id="focusProjectError" hidden></p>
+        </div>
+        <div class="sheet-footer">
+          <span class="footer-spacer"></span>
+          <button class="secondary-button" id="cancelFocusProjectButton2" type="button">取消</button>
+          <button class="primary-button" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="event-dialog" id="focusFlowDialog">
+      <form class="sheet" id="focusFlowForm" novalidate>
+        <div class="sheet-header">
+          <div>
+            <p class="sheet-kicker">顺序模板</p>
+            <h2 id="focusFlowDialogTitle">新建周期专注</h2>
+          </div>
+          <button class="close-button" id="cancelFocusFlowButton" type="button" aria-label="关闭">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+        <div class="form-fields focus-form-fields">
+          <label class="field field-full">
+            <span>流程名称</span>
+            <input id="focusFlowName" maxlength="40" required placeholder="例如：晚间学习" />
+          </label>
+          <label class="field field-full">
+            <span>备注 <small>选填</small></span>
+            <textarea id="focusFlowNotes" maxlength="500" rows="2" placeholder="补充流程说明"></textarea>
+          </label>
+          <div class="field field-full">
+            <span class="field-label">添加步骤</span>
+            <div class="focus-flow-add">
+              <select id="focusFlowStepSelect"></select>
+              <input id="focusFlowStepMinutes" type="number" min="1" max="240" value="25" aria-label="本步骤分钟数" />
+              <button class="secondary-button" id="addFocusFlowStepButton" type="button">添加</button>
+            </div>
+          </div>
+          <div class="focus-flow-steps" id="focusFlowSteps"></div>
+          <p class="form-error" id="focusFlowError" hidden></p>
+        </div>
+        <div class="sheet-footer">
+          <span class="footer-spacer"></span>
+          <button class="secondary-button" id="cancelFocusFlowButton2" type="button">取消</button>
+          <button class="primary-button" type="submit">保存流程</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="focusPasswordDialog">
+      <form class="confirm-sheet" id="focusPasswordForm" novalidate>
+        <div class="account-header">
+          <div>
+            <p class="sheet-kicker">提前退出保护</p>
+            <h2>专注密码</h2>
+          </div>
+          <button class="close-button" id="cancelFocusPasswordButton" type="button" aria-label="关闭">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+        <label class="field" id="currentFocusPasswordField" hidden>
+          <span>当前密码</span>
+          <input id="currentFocusPassword" type="password" autocomplete="current-password" />
+        </label>
+        <label class="field">
+          <span>新密码</span>
+          <input id="newFocusPassword" type="password" minlength="4" maxlength="64" autocomplete="new-password" />
+        </label>
+        <label class="field">
+          <span>确认新密码</span>
+          <input id="confirmFocusPassword" type="password" minlength="4" maxlength="64" autocomplete="new-password" />
+        </label>
+        <p class="recovery-note">
+          安卓忘记密码时可用本地账户密码重置；网页只能通过明确确认清除。
+        </p>
+        <p class="form-error" id="focusPasswordError" hidden></p>
+        <div class="confirm-actions">
+          <button class="danger-button" id="clearFocusPasswordButton" type="button" hidden>清除密码</button>
+          <button class="secondary-button" id="cancelFocusPasswordButton2" type="button">取消</button>
+          <button class="primary-button" type="submit">保存密码</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="focusExitDialog">
+      <div class="confirm-sheet">
+        <h2>提前结束专注？</h2>
+        <p>已经完成的实际专注时间会保留。结束当前流程后不能恢复。</p>
+        <label class="field" id="focusExitPasswordField" hidden>
+          <span>专注密码</span>
+          <input id="focusExitPassword" type="password" autocomplete="current-password" />
+        </label>
+        <p class="form-error" id="focusExitError" hidden></p>
+        <div class="confirm-actions">
+          <button class="secondary-button" id="cancelFocusExitButton" type="button">继续专注</button>
+          <button class="danger-solid-button" id="confirmFocusExitButton" type="button">确认结束</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="focusPasswordResetDialog">
+      <div class="confirm-sheet">
+        <h2>清除专注密码</h2>
+        <p id="focusPasswordResetMessage"></p>
+        <label class="field">
+          <span id="focusPasswordResetLabel">确认内容</span>
+          <input id="focusPasswordResetInput" type="password" autocomplete="current-password" />
+        </label>
+        <p class="form-error" id="focusPasswordResetError" hidden></p>
+        <div class="confirm-actions">
+          <button class="secondary-button" id="cancelFocusPasswordResetButton" type="button">取消</button>
+          <button class="danger-solid-button" id="confirmFocusPasswordResetButton" type="button">确认清除</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="focusSessionDialog">
+      <div class="confirm-sheet">
+        <h2>有未完成的专注</h2>
+        <p id="focusSessionMessage">上次专注已暂停。继续会从当前位置恢复，结束会保留已经完成的专注时间。</p>
+        <div class="confirm-actions">
+          <button class="danger-button" id="discardStoredFocusButton" type="button">结束并保留时间</button>
+          <button class="primary-button" id="resumeStoredFocusButton" type="button">继续专注</button>
+        </div>
+      </div>
+    </dialog>
+
+    <section class="focus-runner" id="focusRunner" hidden>
+      <div class="focus-runner-background" id="focusRunnerBackground"></div>
+      <div class="focus-runner-content">
+        <div class="focus-runner-top">
+          <span id="focusRunnerTitle">专注</span>
+          <span id="focusRunnerStepLabel"></span>
+        </div>
+        <div class="focus-runner-center">
+          <p id="focusRunnerStage">专注</p>
+          <strong id="focusRunnerTime">25:00</strong>
+          <div class="focus-runner-progress"><i id="focusRunnerProgress"></i></div>
+          <blockquote id="focusRunnerQuote"></blockquote>
+        </div>
+        <button class="focus-exit-button" id="exitFocusButton" type="button">提前结束</button>
+      </div>
+      <div class="focus-pause-overlay" id="focusPauseOverlay" hidden>
+        <div>
+          <strong>专注已自动暂停</strong>
+          <p>离开 Daily Route 期间不会累计时间。</p>
+          <div class="confirm-actions">
+            <button class="danger-button" id="endPausedFocusButton" type="button">结束</button>
+            <button class="primary-button" id="continueFocusButton" type="button">继续专注</button>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 

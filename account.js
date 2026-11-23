@@ -46,6 +46,33 @@ export function normalizeAccountRecord(raw) {
   }
 
   const username = normalizeUsername(raw.username);
+  const password = normalizePasswordRecord(raw);
+  if (!password) {
+    return null;
+  }
+
+  const createdAt =
+    typeof raw.createdAt === "string" ? raw.createdAt : "";
+
+  if (
+    username.length < 2 ||
+    username.length > 64 ||
+    !createdAt
+  ) {
+    return null;
+  }
+
+  return {
+    username,
+    ...password,
+    createdAt,
+  };
+}
+
+export function normalizePasswordRecord(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
   const passwordHash =
     typeof raw.passwordHash === "string" ? raw.passwordHash : "";
   const passwordSalt =
@@ -55,13 +82,10 @@ export function normalizeAccountRecord(raw) {
     typeof raw.createdAt === "string" ? raw.createdAt : "";
 
   if (
-    username.length < 2 ||
-    username.length > 64 ||
     !passwordHash ||
     !passwordSalt ||
     !Number.isInteger(passwordIterations) ||
-    passwordIterations < 1 ||
-    !createdAt
+    passwordIterations < 1
   ) {
     return null;
   }
@@ -78,11 +102,9 @@ export function normalizeAccountRecord(raw) {
   }
 
   return {
-    username,
     passwordHash,
     passwordSalt,
     passwordIterations,
-    createdAt,
   };
 }
 
@@ -141,6 +163,26 @@ export async function createLocalAccount(
     throw new Error(validationError);
   }
 
+  return {
+    username: normalizeUsername(username),
+    ...(await createPasswordRecord(password, {
+      cryptoImpl,
+      iterations,
+    })),
+    createdAt: now.toISOString(),
+  };
+}
+
+export async function createPasswordRecord(
+  password,
+  {
+    cryptoImpl = globalThis.crypto,
+    iterations = PASSWORD_ITERATIONS,
+  } = {},
+) {
+  if (!cryptoImpl?.subtle || !cryptoImpl?.getRandomValues) {
+    throw new Error("当前环境不支持安全密码存储");
+  }
   const salt = cryptoImpl.getRandomValues(new Uint8Array(SALT_BYTES));
   const hash = await derivePasswordHash(
     password,
@@ -148,22 +190,19 @@ export async function createLocalAccount(
     iterations,
     cryptoImpl,
   );
-
   return {
-    username: normalizeUsername(username),
     passwordHash: bytesToBase64(hash),
     passwordSalt: bytesToBase64(salt),
     passwordIterations: iterations,
-    createdAt: now.toISOString(),
   };
 }
 
-export async function verifyAccountPassword(
-  account,
+export async function verifyPasswordRecord(
+  record,
   password,
   { cryptoImpl = globalThis.crypto } = {},
 ) {
-  const normalized = normalizeAccountRecord(account);
+  const normalized = normalizePasswordRecord(record);
   if (!normalized || !cryptoImpl?.subtle) {
     return false;
   }
@@ -178,6 +217,17 @@ export async function verifyAccountPassword(
     actual,
     base64ToBytes(normalized.passwordHash),
   );
+}
+
+export async function verifyAccountPassword(
+  account,
+  password,
+  options,
+) {
+  const normalized = normalizeAccountRecord(account);
+  return normalized
+    ? verifyPasswordRecord(normalized, password, options)
+    : false;
 }
 
 export async function updateAccountPassword(

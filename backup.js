@@ -3,28 +3,42 @@ import {
   normalizeActivities,
   normalizeCategories,
 } from "./activities.js";
+import { emptyFocusState, normalizeFocusState } from "./focus.js";
 import {
   normalizeReviewEntries,
   normalizeReviewReminder,
 } from "./review.js";
 
 export const BACKUP_FORMAT = "daily-route-backup";
-export const BACKUP_VERSION = 5;
-export const SUPPORTED_BACKUP_VERSIONS = Object.freeze([1, 2, 3, 4, 5]);
+export const BACKUP_VERSION = 6;
+export const SUPPORTED_BACKUP_VERSIONS = Object.freeze([
+  1, 2, 3, 4, 5, 6,
+]);
 
 export function createBackup(
   events,
   {
-    appVersion = "0.5.1",
+    appVersion = "0.6.0",
     categories = emptyCategories(),
     yearMigrationCompletedFor = new Date().getFullYear(),
     reviewEntries = [],
     reviewReminder = normalizeReviewReminder(),
+    focusProjects = [],
+    focusFlows = [],
+    focusQuotes = [],
+    focusWallpapers = [],
     now = new Date(),
   } = {},
 ) {
   const normalizedEvents = normalizeActivities(events);
   const normalizedReviews = normalizeReviewEntries(reviewEntries);
+  const focus = normalizeFocusState({
+    focusProjects,
+    focusFlows,
+    focusQuotes,
+    focusWallpapers,
+    focusPassword: null,
+  });
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
@@ -37,6 +51,11 @@ export function createBackup(
     reviewCount: normalizedReviews.length,
     reviewEntries: normalizedReviews,
     reviewReminder: normalizeReviewReminder(reviewReminder),
+    focusProjectCount: focus.focusProjects.length,
+    focusProjects: focus.focusProjects,
+    focusFlows: focus.focusFlows,
+    focusQuotes: focus.focusQuotes,
+    focusWallpapers: focus.focusWallpapers,
   };
 }
 
@@ -57,7 +76,10 @@ export function parseBackup(text) {
     throw new Error("备份文件格式或版本不受支持");
   }
 
-  const events = normalizeActivities(payload.events);
+  const migrateFromV5 = payload.version < 6;
+  const events = normalizeActivities(payload.events).map((activity) =>
+    migrateFromV5 ? { ...activity, categoryId: null } : activity,
+  );
   if (events.length !== payload.events.length) {
     throw new Error("备份中包含无法识别的活动");
   }
@@ -77,6 +99,18 @@ export function parseBackup(text) {
   ) {
     throw new Error("备份回顾数量校验失败");
   }
+  const focus = migrateFromV5
+    ? emptyFocusState()
+    : normalizeFocusState({
+        ...payload,
+        focusPassword: null,
+      });
+  if (
+    payload.focusProjectCount !== undefined &&
+    Number(payload.focusProjectCount) !== focus.focusProjects.length
+  ) {
+    throw new Error("备份专注项目数量校验失败");
+  }
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
@@ -86,7 +120,11 @@ export function parseBackup(text) {
     exportedAt:
       typeof payload.exportedAt === "string" ? payload.exportedAt : "",
     eventCount: events.length,
-    categories: normalizeCategories(payload.categories),
+    categories: migrateFromV5
+      ? emptyCategories()
+      : normalizeCategories(
+          payload.categories === undefined ? [] : payload.categories,
+        ),
     yearMigrationCompletedFor:
       Number.isInteger(year) && year >= 1900
         ? year
@@ -95,6 +133,7 @@ export function parseBackup(text) {
     reviewCount: reviewEntries.length,
     reviewEntries,
     reviewReminder: normalizeReviewReminder(payload.reviewReminder),
+    ...focus,
   };
 }
 

@@ -157,20 +157,20 @@ test("legacy and new check-ins default to no reminder at 21:00", () => {
   assert.equal(activity.reminderTime, "21:00");
 });
 
-test("categories are isolated by kind and deleting one leaves activities intact", () => {
+test("categories are global and deleting one only removes its definition", () => {
   let categories = normalizeCategories(null);
-  categories = addCategory(categories, "schedule", "课程");
-  categories = addCategory(categories, "todo", "课程");
-  assert.equal(categories.schedule.length, 1);
-  assert.equal(categories.todo.length, 1);
-  const category = categories.schedule[0];
+  categories = addCategory(categories, "课程");
+  categories = addCategory(categories, "课程");
+  categories = addCategory(categories, "考研");
+  assert.equal(categories.length, 2);
+  const category = categories[0];
   assert.equal(
-    categoryName(categories, "schedule", category.id),
+    categoryName(categories, category.id),
     "课程",
   );
-  categories = deleteCategory(categories, "schedule", category.id);
-  assert.equal(categories.schedule.length, 0);
-  assert.equal(categories.todo.length, 1);
+  categories = deleteCategory(categories, category.id);
+  assert.equal(categories.length, 1);
+  assert.equal(categories[0].name, "考研");
 });
 
 test("completed todo archives and retains its backup metadata", () => {
@@ -199,7 +199,7 @@ test("archiving a regular series removes all future occurrences", () => {
   );
 });
 
-test("native v3 storage upgrades to v5 with categories and activity kinds", async () => {
+test("native v3 storage upgrades to v6 and clears legacy categories", async () => {
   const storage = memoryStorage();
   const account = await createLocalAccount(
     { username: "小风", password: "secret123" },
@@ -223,14 +223,14 @@ test("native v3 storage upgrades to v5 with categories and activity kinds", asyn
   const migrated = migrateNativeState(storage);
   assert.equal(migrated.status, "ok");
   assert.equal(migrated.state.events[0].kind, "schedule");
-  assert.equal(migrated.state.categories.schedule[0].name, "课程");
+  assert.deepEqual(migrated.state.categories, []);
   assert.ok(storage.getItem(NATIVE_STORAGE_KEY));
 });
 
-test("backup v5 includes categories and mixed kinds without account secrets", () => {
-  const categories = normalizeCategories({
-    schedule: [{ id: "cat", name: "课程" }],
-  });
+test("backup v6 includes global categories and mixed kinds without account secrets", () => {
+  const categories = normalizeCategories([
+    { id: "cat", name: "课程" },
+  ]);
   const backup = createBackup([schedule(), todo()], {
     categories,
     yearMigrationCompletedFor: 2026,
@@ -238,9 +238,9 @@ test("backup v5 includes categories and mixed kinds without account secrets", ()
   });
   const text = JSON.stringify(backup);
   const parsed = parseBackup(text);
-  assert.equal(parsed.version, 5);
+  assert.equal(parsed.version, 6);
   assert.equal(parsed.events.length, 2);
-  assert.equal(parsed.categories.schedule[0].name, "课程");
+  assert.equal(parsed.categories[0].name, "课程");
   assert.equal(text.includes("passwordHash"), false);
 });
 

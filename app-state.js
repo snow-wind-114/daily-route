@@ -5,6 +5,10 @@ import {
 } from "./activities.js";
 import { normalizeAccountRecord } from "./account.js";
 import {
+  emptyFocusState,
+  normalizeFocusState,
+} from "./focus.js";
+import {
   normalizeReviewEntries,
   normalizeReviewReminder,
 } from "./review.js";
@@ -13,11 +17,14 @@ export const WEB_STORAGE_KEY = "daily-route.storage.v1";
 export const OLDER_NATIVE_STORAGE_KEY = "daily-route.storage.v2";
 export const PREVIOUS_OLDER_NATIVE_STORAGE_KEY =
   "daily-route.storage.v3";
-export const PREVIOUS_NATIVE_STORAGE_KEY = "daily-route.storage.v4";
+export const PREVIOUS_PREVIOUS_NATIVE_STORAGE_KEY =
+  "daily-route.storage.v4";
+export const PREVIOUS_NATIVE_STORAGE_KEY = "daily-route.storage.v5";
 export const LEGACY_NATIVE_STORAGE_KEY = OLDER_NATIVE_STORAGE_KEY;
-export const NATIVE_STORAGE_KEY = "daily-route.storage.v5";
-export const NATIVE_STORAGE_VERSION = 5;
-export const PREVIOUS_NATIVE_STORAGE_VERSION = 4;
+export const NATIVE_STORAGE_KEY = "daily-route.storage.v6";
+export const NATIVE_STORAGE_VERSION = 6;
+export const PREVIOUS_NATIVE_STORAGE_VERSION = 5;
+export const PREVIOUS_PREVIOUS_NATIVE_STORAGE_VERSION = 4;
 export const PREVIOUS_OLDER_NATIVE_STORAGE_VERSION = 3;
 export const LEGACY_NATIVE_STORAGE_VERSION = 2;
 
@@ -36,6 +43,7 @@ function parseWebPayload(payload) {
       yearMigrationCompletedFor: new Date().getFullYear(),
       reviewEntries: [],
       reviewReminder: normalizeReviewReminder(),
+      ...emptyFocusState(),
     };
   }
   if (!payload || typeof payload !== "object") {
@@ -45,17 +53,29 @@ function parseWebPayload(payload) {
       yearMigrationCompletedFor: new Date().getFullYear(),
       reviewEntries: [],
       reviewReminder: normalizeReviewReminder(),
+      ...emptyFocusState(),
     };
   }
   const rawEvents = Array.isArray(payload.events) ? payload.events : [];
+  const payloadVersion = Number(payload.version);
+  const migrateFromV5 =
+    !Number.isInteger(payloadVersion) || payloadVersion < 6;
+  const events = normalizeActivities(rawEvents).map((activity) =>
+    migrateFromV5 ? { ...activity, categoryId: null } : activity,
+  );
   return {
-    events: normalizeActivities(rawEvents),
-    categories: normalizeCategories(payload.categories),
+    events,
+    categories: migrateFromV5
+      ? emptyCategories()
+      : normalizeCategories(payload.categories),
     yearMigrationCompletedFor: normalizeYear(
       payload.yearMigrationCompletedFor,
     ),
     reviewEntries: normalizeReviewEntries(payload.reviewEntries),
     reviewReminder: normalizeReviewReminder(payload.reviewReminder),
+    ...(migrateFromV5
+      ? emptyFocusState()
+      : normalizeFocusState(payload)),
   };
 }
 
@@ -68,6 +88,7 @@ export function readWebState(storage = localStorage) {
       yearMigrationCompletedFor: new Date().getFullYear(),
       reviewEntries: [],
       reviewReminder: normalizeReviewReminder(),
+      ...emptyFocusState(),
     };
   }
   return parseWebPayload(JSON.parse(stored));
@@ -89,6 +110,7 @@ export function writeWebState(state, storage = localStorage) {
       ),
       reviewEntries: normalizeReviewEntries(state.reviewEntries),
       reviewReminder: normalizeReviewReminder(state.reviewReminder),
+      ...normalizeFocusState(state),
     }),
   );
 }
@@ -101,6 +123,7 @@ export function writeWebEvents(events, storage = localStorage) {
       yearMigrationCompletedFor: new Date().getFullYear(),
       reviewEntries: [],
       reviewReminder: normalizeReviewReminder(),
+      ...emptyFocusState(),
     },
     storage,
   );
@@ -112,6 +135,7 @@ export function normalizeNativeState(payload) {
     ![
       NATIVE_STORAGE_VERSION,
       PREVIOUS_NATIVE_STORAGE_VERSION,
+      PREVIOUS_PREVIOUS_NATIVE_STORAGE_VERSION,
       PREVIOUS_OLDER_NATIVE_STORAGE_VERSION,
       LEGACY_NATIVE_STORAGE_VERSION,
     ].includes(payload.version) ||
@@ -124,18 +148,27 @@ export function normalizeNativeState(payload) {
   if (!account) {
     return null;
   }
+  const migrateFromV5 = Number(payload.version) < 6;
+  const events = normalizeActivities(payload.events).map((activity) =>
+    migrateFromV5 ? { ...activity, categoryId: null } : activity,
+  );
 
   return {
     version: NATIVE_STORAGE_VERSION,
     account,
     sessionActive: payload.sessionActive === true,
-    events: normalizeActivities(payload.events),
-    categories: normalizeCategories(payload.categories),
+    events,
+    categories: migrateFromV5
+      ? emptyCategories()
+      : normalizeCategories(payload.categories),
     yearMigrationCompletedFor: normalizeYear(
       payload.yearMigrationCompletedFor,
     ),
     reviewEntries: normalizeReviewEntries(payload.reviewEntries),
     reviewReminder: normalizeReviewReminder(payload.reviewReminder),
+    ...(migrateFromV5
+      ? emptyFocusState()
+      : normalizeFocusState(payload)),
   };
 }
 
@@ -147,6 +180,11 @@ export function makeNativeStatePayload({
   yearMigrationCompletedFor,
   reviewEntries,
   reviewReminder,
+  focusProjects,
+  focusFlows,
+  focusQuotes,
+  focusWallpapers,
+  focusPassword,
 }) {
   return {
     version: NATIVE_STORAGE_VERSION,
@@ -157,6 +195,13 @@ export function makeNativeStatePayload({
     yearMigrationCompletedFor: normalizeYear(yearMigrationCompletedFor),
     reviewEntries: normalizeReviewEntries(reviewEntries),
     reviewReminder: normalizeReviewReminder(reviewReminder),
+    ...normalizeFocusState({
+      focusProjects,
+      focusFlows,
+      focusQuotes,
+      focusWallpapers,
+      focusPassword,
+    }),
   };
 }
 
@@ -179,6 +224,7 @@ export function readNativeState(storage = localStorage) {
 
   for (const key of [
     PREVIOUS_NATIVE_STORAGE_KEY,
+    PREVIOUS_PREVIOUS_NATIVE_STORAGE_KEY,
     PREVIOUS_OLDER_NATIVE_STORAGE_KEY,
     OLDER_NATIVE_STORAGE_KEY,
   ]) {
@@ -214,6 +260,7 @@ export function writeNativeState(state, storage = localStorage) {
 export function removeNativeState(storage = localStorage) {
   storage.removeItem(NATIVE_STORAGE_KEY);
   storage.removeItem(PREVIOUS_NATIVE_STORAGE_KEY);
+  storage.removeItem(PREVIOUS_PREVIOUS_NATIVE_STORAGE_KEY);
   storage.removeItem(PREVIOUS_OLDER_NATIVE_STORAGE_KEY);
   storage.removeItem(OLDER_NATIVE_STORAGE_KEY);
 }
