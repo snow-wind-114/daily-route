@@ -4,9 +4,9 @@
 
 ## 版本与发布地址
 
-- 当前版本：`v0.6.1`
-- Android：`versionCode=11`、`versionName=0.6.1`
-- 版本日期：`2026-11-23`
+- 当前版本：`v0.6.3`
+- Android：`versionCode=13`、`versionName=0.6.3`
+- 版本日期：`2026-11-26`
 - 网页：<https://snow-wind-114.github.io/daily-route/>
 - 固定 APK：
   <https://github.com/snow-wind-114/daily-route/releases/latest/download/daily-route.apk>
@@ -18,6 +18,9 @@
 
 每次提交 GitHub 时，必须在同一提交更新本文件。
 
+- 除非用户当轮明确要求“提交”“发布”或“上传”，只更新代码和版本号、运行验证并构建本地签名 APK；不得执行 Git commit/push、标签、GitHub Release 或线上 Pages 更新。
+- 未要求发布时，默认提供 `artifacts/daily-route-v<version>.apk` 和 `artifacts/daily-route.apk` 作为本地下载文件。
+- 用户明确要求发布时，严格使用指定版本；不得改写已经存在的标签，也不得擅自提升或复用其他版本号。
 - 文档修正、兼容性 bugfix、内部重构：`v0.5.1`、`v0.5.2`……
 - 新增用户可见功能、数据结构或重要交互：`v0.4`、`v0.5`……
 - 正式稳定版或不兼容的数据/URL 变化：`v1.0`、`v2.0`……
@@ -27,6 +30,8 @@
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| `v0.6.3` | 2026-11-26 | 专注运行页白名单入口、单次项目只读月历和每日专注历史 |
+| `v0.6.2` | 2026-11-23 | Android 专注锁机与白名单、息屏续算、手动暂停、完成通知和壁纸保持 |
 | `v0.6.1` | 2026-11-23 | 修复移动端活动多选、专注滚动、教程遮挡和壁纸预览 |
 | `v0.6.0` | 2026-11-23 | 活动草稿、多选批处理、离线教程、全局分类、分类迁移和专注 MVP |
 | `v0.5.2` | 2026-11-22 | 回顾直达与范围导出、顶栏添加按钮清理、12 月年度迁移和回顾清理 |
@@ -41,19 +46,18 @@
 
 ### 最近验证
 
-- `node --test`：74 项通过。
-- `node --check` 与统一版本检查：通过。
-- Android `testDebugUnitTest` 与 Java 编译：通过。
-- Android Debug/Release 构建：通过，`versionCode=11`、`versionName=0.6.1`。
+- `node --test`：83 项通过。
+- `node --check`、脚本语法与统一版本检查：通过，版本为 `v0.6.3 (13)`。
+- Android `testDebugUnitTest`：通过，包含专注锁机包名策略测试。
+- Android Debug/Release 构建：通过，`versionCode=13`、`versionName=0.6.3`。
 - Release APK：v2 签名通过，证书 SHA-256 仍为 `81af0bc6dad4481ca886befff7e4dd5d87e5fde9e3ec6c7a4fe24a686f91b1ab`。
-- Release APK SHA-256：`53554B8F16DC8957D5D45F4C274EF782DB095064D8D6BC239846B47704F69BEB`。
+- Release APK SHA-256：`23C3F4B160FF92E284761BA00B6211B0E6BD08B60F0C58BF928BF5A0C42D504F`。
 - Release 权限：INTERNET、VIBRATE、RECEIVE_BOOT_COMPLETED、WAKE_LOCK、POST_NOTIFICATIONS、SCHEDULE_EXACT_ALARM；另有 AndroidX 生成的包内动态接收器权限。
-- 无头 Edge 390×844：活动工具栏与批量按钮等宽等高、教程完整落在视口内、专注页可滚动、壁纸缩略图和预览成功解码；320 宽度无横向溢出。
-- Android 模拟器：v0.6.0 覆盖安装 v0.6.1 后账户、活动和专注累计保留；新增壁纸上传与预览正常。
-- Android 模拟器布局回查：三枚活动按钮同行等宽、教程标签完整、专注页可滚动、壁纸预览按运行页比例显示。
-- Android 专注：原生沉浸模式、自动暂停、继续/结束确认和实际 1 分钟累计通过；最终固定 APK 可继续同签名覆盖安装。
-- 自动测试：迁移候选包含暂停项目、排除待办和手动归档；确认后次年副本恢复排程并清空打卡历史。
-- 自动测试：12 月 1 日 09:00 生成一次普通迁移通知，12 月 1 日后不补发通知。
+- 无头 Edge 390×844 与 320px：项目操作顺序为“开始、编辑、月历、删除”，月历只读且显示当天秒数；原有专注连续计时、暂停、壁纸和导航检查继续通过。
+- Android 模拟器：v0.6.2 覆盖安装 v0.6.3 后账户、活动、累计时间、白名单 Chrome、回顾和壁纸数据保留；最终 APK 可继续覆盖安装。
+- 白名单应用入口：专注运行页显示“白名单应用”，打开面板后可启动 Chrome；专注计时保持运行。
+- 项目月历：Android 对话框显示 42 格月份、当天记录“2分”、月份汇总“1天有记录·2分钟·0次完成”，没有编辑控件。
+- 历史兼容：旧累计时间继续保留，月历只从 v0.6.3 新记录开始显示，不虚构旧日期。
 
 ## 产品边界
 
@@ -71,6 +75,7 @@ Daily Route 是单用户、本地优先、按当前自然年组织的活动安�
 
 - 使用本地单账户，是长期主入口。
 - 支持普通通知、应用自有精确闹钟排程、桌面组件、本地恢复点和 JSON 导入导出。
+- 支持应用内专注和可选无障碍锁机；网页版无法拦截其他应用。
 - 用户主动检查更新，通过系统浏览器下载覆盖安装。
 - 不依赖后端、云数据库、云同步或第三方 API。
 
@@ -86,7 +91,7 @@ Daily Route 是单用户、本地优先、按当前自然年组织的活动安�
 - 原生 HTML、CSS、JavaScript ES Modules。
 - Node.js、Capacitor 8.6、Android Gradle Plugin 8.13。
 - Android compileSdk/targetSdk 36，minSdk 24。
-- Android 插件：App、Browser、Local Notifications、Filesystem、Share。
+- Android 插件：App、Browser、Local Notifications、Filesystem、Share 和自定义 Device/Widget/Alarm 插件。
 - 测试：Node.js 内置 `node:test`。
 
 ```text
@@ -123,6 +128,8 @@ android/
   -> DailyRouteAlarmRestoreReceiver（重启、时间和时区变化后恢复）
   -> DailyRouteWidgetPlugin（JS 到 SharedPreferences）
   -> DailyRouteWidgetProvider（RemoteViews 4×2 组件）
+  -> DailyRouteFocusAccessibilityService（专注锁机窗口拦截）
+  -> DailyRouteFocusLock（白名单和锁机私有状态）
   -> Gradle 生成 Debug/Release APK
 ```
 
@@ -281,10 +288,19 @@ daily-route.storage.v2
 - 单次项目类型仅允许 `focus`、`rest`；时长 1–240 分钟。两类都记录自身累计执行秒数，只有 `focus` 计入总专注时长。
 - 周期专注是一次性顺序模板，不是日历重复活动；步骤引用单次项目并允许覆盖 1–240 分钟，最多 20 步。
 - 被流程引用的单次项目不得直接删除，必须先从流程移除。
-- 运行使用真实时间计算；应用进入后台或页面隐藏时立即暂停，返回后只能选择继续或结束。
+- 运行使用真实时间计算；息屏、进入后台、页面隐藏和进程恢复都继续计时，只有用户手动暂停才停止。
+- 周期流程恢复时必须顺序补齐所有已跨过的阶段，不能只结算当前一步。
 - 提前结束必须二次确认；设置密码时先验证密码。实际前台执行秒数计入当前项目，休息段不计入总专注时长。
-- Android 专注使用原生沉浸模式和 `FLAG_KEEP_SCREEN_ON`；不申请无障碍、悬浮窗、设备所有者或白名单权限。
-- 活动运行会话保存在 `daily-route.focus-session.v1`，应用被回收后恢复为暂停状态。
+- Android 专注使用原生沉浸模式和 `FLAG_KEEP_SCREEN_ON`；可选锁机使用只监听窗口状态的无障碍服务，不读取窗口内容、不模拟点击。
+- 无障碍未开启时允许普通专注，但必须显示“锁机未生效”；开启后所有专注自动启用锁机。
+- 手动暂停时计时停止但锁机保留；完成或提前结束后解除。锁屏、通知栏、权限确认和紧急入口固定放行，系统设置不默认放行。
+- 可启动应用白名单由原生读取名称，支持搜索和多选；白名单与锁机状态只保存在 Android 私有 SharedPreferences，不进入 JSON 或恢复点。
+- 专注运行页必须提供白名单应用入口；入口只显示已配置且仍安装的应用，通过原生启动应用，计时继续。
+- 每个单次项目保存 `dailyHistory`：`{ date, seconds, completedRuns }`，按本地日期合并；旧版本累计值无法反推日期。
+- 单次项目的“编辑”后提供只读月历，显示 42 格月度记录、每日时长、完成次数和月份汇总，不允许补录或修改历史。
+- 活动运行会话保存在 `daily-route.focus-session.v1`；新会话使用 `continuityVersion: 2` 按真实时间恢复，v0.6.1 旧会话升级后首次仍按暂停恢复。
+- 运行会话保存固定的 `wallpaperId`、`quoteId`；暂停、继续和前后台切换不得重新随机或清空壁纸，进程恢复时从 IndexedDB 重读同一图片。
+- 专注完成通知进入现有串行提醒计划，使用普通通知通道；开始/继续安排，暂停/完成/提前结束取消，不新增精确闹钟权限。
 - 专注密码使用 PBKDF2 哈希；手动 JSON 不包含哈希，导入后关闭。Android 可用本地账户密码清除，网页必须输入“清除专注密码”。
 - 壁纸压缩后存入 IndexedDB，最多 12 张、最长边 1920px；图片不进入 JSON 或恢复点。
 
@@ -451,7 +467,7 @@ newStart < existingEnd && newEnd > existingStart
 {
   "format": "daily-route-backup",
   "version": 6,
-  "appVersion": "0.6.1",
+  "appVersion": "0.6.3",
   "exportedAt": "ISO timestamp",
   "eventCount": 0,
   "yearMigrationCompletedFor": 2026,
@@ -514,13 +530,15 @@ newStart < existingEnd && newEnd > existingStart
 - 广泛外部存储权限
 - 电池优化白名单
 
+专注锁机的 `DailyRouteFocusAccessibilityService` 使用 `BIND_ACCESSIBILITY_SERVICE` 服务声明和 `typeWindowStateChanged`，它不是普通运行时权限，也不得开启窗口内容读取、手势执行或按键过滤。应用清单可通过 `<queries>` 查询启动器应用，但不得扩大为任意包查询或安装应用列表用途。
+
 修改插件后必须检查合并后的 APK 清单，不能只看源 Manifest。
 
 ## Android 工程与构建
 
 - 包名：`com.snowwind114.dailyroute`
-- `versionCode`：11
-- `versionName`：0.6.1
+- `versionCode`：13
+- `versionName`：0.6.3
 - JDK：`E:\Android\Android Studio\jbr`
 - SDK：`C:\Users\Administrator\AppData\Local\Android\Sdk`
 - Gradle：8.14.3
@@ -581,6 +599,8 @@ android/keystore.properties
 - 回顾周/月/年范围、空范围、迁移候选、暂停恢复、待办排除和 12 月迁移提醒。
 - 三类活动草稿独立存取、删除和过期恢复。
 - 专注项目校验、流程引用与时长覆盖、专注/休息累计、密码哈希和暂停会话恢复。
+- 专注息屏跨阶段补算、手动暂停/继续、进程恢复、旧 v0.6.1 会话兼容、完成通知安排/取消和视觉 ID 保持。
+- 专注每日历史按本地日期合并、去重、完成次数累计、编辑保留和 v6 备份往返。
 - 专注密码和壁纸二进制不进入 JSON；壁纸元数据和语句进入 v6。
 
 手动验证：
@@ -599,6 +619,9 @@ android/keystore.properties
 12. 重启手机后可恢复尚未发生的提醒。
 13. 账号退出后组件清空，重新登录后恢复。
 14. JSON 导入预览、恢复点和最近导出提示正常。
+15. 安卓无障碍开关、白名单搜索、非白名单拦截、暂停仍锁机、锁屏/权限界面放行和结束后解锁正常。
+16. 息屏与切后台继续计时，进程恢复自动补齐，完成通知点击返回专注，暂停/继续后壁纸不消失。
+17. 专注运行页白名单入口可启动允许应用；单次项目月历可查看每日记录且没有编辑控件。
 
 ## 提交前检查
 
@@ -623,6 +646,8 @@ git status
 
 - 网页和安卓不自动同步。
 - 普通通知可能延迟；精确闹钟仍受厂商后台策略、勿扰模式和系统设置影响。
+- 专注锁机不是设备管理员级 Kiosk；用户可从系统无障碍设置关闭服务，部分厂商也可能限制后台拉起。
+- 单次项目月历从 v0.6.3 开始记录；此前只有累计时间，没有可恢复的逐日历史。
 - 主视图固定为当前自然年；下一年度项目通过 12 月迁移提前创建。
 - 账户密码不加密活动，不迁移到新手机。
 - “每 N 天”仍不支持按星期几或结束日期。

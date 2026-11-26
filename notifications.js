@@ -101,6 +101,7 @@ export function buildReminderPlan(
     now = new Date(),
     reviewReminder = DEFAULT_REVIEW_REMINDER,
     migrationReminder = { enabled: false },
+    focusCompletion = null,
   } = {},
 ) {
   const plan = [];
@@ -209,6 +210,25 @@ export function buildReminderPlan(
           ? `打卡提醒：${group.titles[0]}`
           : `${group.titles.length}项待打卡`,
       body: `今天还未打卡：${group.titles.join("、")}`,
+    });
+  }
+
+  if (
+    focusCompletion?.sessionId &&
+    focusCompletion.at instanceof Date &&
+    !Number.isNaN(focusCompletion.at.getTime())
+  ) {
+    addPlanItem({
+      kind: "focusCompletion",
+      seriesId: `focus-session:${focusCompletion.sessionId}`,
+      occurrenceDate: focusCompletion.sessionId,
+      effectiveDate: todayISO(now),
+      title: "专注完成",
+      body: `“${focusCompletion.title || "专注"}”已经结束。`,
+      at: focusCompletion.at,
+      minutesBefore: 0,
+      mode: "notification",
+      focusSessionId: focusCompletion.sessionId,
     });
   }
 
@@ -465,6 +485,7 @@ function scheduledNotification(item, exact, channelId = null) {
       reminderMode: item.mode,
       exact,
       repeatDaily: item.repeatDaily === true,
+      focusSessionId: item.focusSessionId ?? null,
       checkinIds: item.checkinIds ?? [],
       checkinTitles: item.titles ?? [],
     },
@@ -477,6 +498,7 @@ async function syncScheduledNotificationsInternal(
     endDate,
     reviewReminder = DEFAULT_REVIEW_REMINDER,
     migrationReminder = { enabled: false },
+    focusCompletion = null,
   } = {},
 ) {
   const plugin = getPlugin("LocalNotifications");
@@ -519,6 +541,7 @@ async function syncScheduledNotificationsInternal(
       getScheduleWindow(todayISO()).endDate,
     reviewReminder,
     migrationReminder,
+    focusCompletion,
   });
   const alarmJobs = plan.filter((item) => item.mode === "alarm");
   const regular = plan.filter((item) => item.mode !== "alarm");

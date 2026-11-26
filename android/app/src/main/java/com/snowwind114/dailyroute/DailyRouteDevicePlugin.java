@@ -5,15 +5,22 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ResolveInfo;
 import android.os.Build;
 import android.provider.Settings;
 import android.view.View;
 import android.view.WindowManager;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @CapacitorPlugin(name = "DailyRouteDevice")
 public class DailyRouteDevicePlugin extends Plugin {
@@ -80,6 +87,116 @@ public class DailyRouteDevicePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getFocusLockStatus(PluginCall call) {
+        call.resolve(focusLockStatus());
+    }
+
+    @PluginMethod
+    public void openFocusLockSettings(PluginCall call) {
+        Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void listLaunchableApps(PluginCall call) {
+        Intent intent = new Intent(Intent.ACTION_MAIN);
+        intent.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<ResolveInfo> resolved = getContext()
+            .getPackageManager()
+            .queryIntentActivities(intent, 0);
+        Map<String, String> labels = new HashMap<>();
+        for (ResolveInfo item : resolved) {
+            if (item.activityInfo == null) {
+                continue;
+            }
+            String packageName = item.activityInfo.packageName;
+            if (
+                packageName == null ||
+                packageName.equals(getContext().getPackageName()) ||
+                labels.containsKey(packageName)
+            ) {
+                continue;
+            }
+            CharSequence label = item.loadLabel(
+                getContext().getPackageManager()
+            );
+            labels.put(
+                packageName,
+                label == null ? packageName : label.toString()
+            );
+        }
+        List<JSObject> apps = new ArrayList<>();
+        for (Map.Entry<String, String> entry : labels.entrySet()) {
+            JSObject item = new JSObject();
+            item.put("packageName", entry.getKey());
+            item.put("label", entry.getValue());
+            apps.add(item);
+        }
+        Collections.sort(
+            apps,
+            (left, right) ->
+                left.getString("label").compareToIgnoreCase(
+                    right.getString("label")
+                )
+        );
+        JSArray result = new JSArray();
+        for (JSObject item : apps) {
+            result.put(item);
+        }
+        JSObject response = new JSObject();
+        response.put("apps", result);
+        call.resolve(response);
+    }
+
+    @PluginMethod
+    public void setFocusLockAllowedPackages(PluginCall call) {
+        DailyRouteFocusLock.setAllowedPackages(
+            getContext(),
+            readablePackageList(call.getArray("allowedPackages"))
+        );
+        call.resolve(focusLockStatus());
+    }
+
+    @PluginMethod
+    public void setFocusLock(PluginCall call) {
+        DailyRouteFocusLock.setAllowedPackages(
+            getContext(),
+            readablePackageList(call.getArray("allowedPackages"))
+        );
+        DailyRouteFocusLock.setActive(
+            getContext(),
+            Boolean.TRUE.equals(call.getBoolean("enabled"))
+        );
+        call.resolve(focusLockStatus());
+    }
+
+    @PluginMethod
+    public void openFocusAllowedApp(PluginCall call) {
+        String packageName = call.getString("packageName", "").trim();
+        if (
+            packageName.isEmpty() ||
+            !DailyRouteFocusLock.getAllowedPackages(getContext()).contains(
+                packageName
+            )
+        ) {
+            call.reject("这个应用不在专注白名单中");
+            return;
+        }
+        Intent launch = getContext()
+            .getPackageManager()
+            .getLaunchIntentForPackage(packageName);
+        if (launch == null) {
+            call.reject("无法打开这个应用");
+            return;
+        }
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(launch);
+        call.resolve();
+    }
+
+    @PluginMethod
     public void setFocusMode(PluginCall call) {
         boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled"));
         if (getActivity() == null) {
@@ -109,6 +226,36 @@ public class DailyRouteDevicePlugin extends Plugin {
             }
             call.resolve();
         });
+    }
+
+    private JSObject focusLockStatus() {
+        JSObject result = new JSObject();
+        result.put(
+            "serviceEnabled",
+            DailyRouteFocusLock.isServiceEnabled(getContext())
+        );
+        JSArray allowed = new JSArray();
+        for (String packageName : DailyRouteFocusLock.getAllowedPackages(
+            getContext()
+        )) {
+            allowed.put(packageName);
+        }
+        result.put("allowedPackages", allowed);
+        return result;
+    }
+
+    private List<String> readablePackageList(JSArray values) {
+        List<String> packages = new ArrayList<>();
+        if (values == null) {
+            return packages;
+        }
+        for (int index = 0; index < values.length(); index += 1) {
+            String packageName = values.optString(index, "").trim();
+            if (!packageName.isEmpty()) {
+                packages.add(packageName);
+            }
+        }
+        return packages;
     }
 
     private void putChannelState(

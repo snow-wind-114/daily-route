@@ -328,6 +328,38 @@
             专注密码未设置。
           </p>
 
+          <section class="focus-lock-card" id="focusLockCard" hidden>
+            <div class="focus-lock-heading">
+              <div>
+                <strong>专注锁机</strong>
+                <span id="focusLockStatus">正在检查系统权限…</span>
+              </div>
+              <span class="focus-lock-badge" id="focusLockBadge">检查中</span>
+            </div>
+            <p id="focusLockDetail">
+              开启无障碍服务后，专注期间只允许使用白名单应用。
+            </p>
+            <p class="focus-allowed-summary" id="focusAllowedAppsSummary">
+              尚未选择允许应用。
+            </p>
+            <div class="focus-lock-actions">
+              <button
+                class="secondary-button"
+                id="openFocusLockSettingsButton"
+                type="button"
+              >
+                开启系统权限
+              </button>
+              <button
+                class="secondary-button"
+                id="configureFocusAllowedAppsButton"
+                type="button"
+              >
+                选择允许应用
+              </button>
+            </div>
+          </section>
+
           <div class="focus-toolbar">
             <button
               class="primary-button"
@@ -1868,23 +1900,168 @@
       </div>
     </dialog>
 
-    <dialog class="confirm-dialog" id="focusSessionDialog">
-      <div class="confirm-sheet">
-        <h2>有未完成的专注</h2>
-        <p id="focusSessionMessage">上次专注已暂停。继续会从当前位置恢复，结束会保留已经完成的专注时间。</p>
+    <dialog class="event-dialog" id="focusAllowlistDialog">
+      <div class="sheet focus-allowlist-sheet">
+        <div class="account-header">
+          <div>
+            <p class="sheet-kicker">专注锁机</p>
+            <h2>允许使用的应用</h2>
+          </div>
+          <button
+            class="close-button"
+            id="closeFocusAllowlistDialog"
+            type="button"
+            aria-label="关闭"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+        <div class="focus-allowlist-body">
+          <p class="focus-allowlist-note">
+            系统锁屏、通知栏、权限确认和紧急入口始终允许。白名单只保存在当前设备。
+          </p>
+          <input
+            id="focusAllowlistSearch"
+            class="focus-allowlist-search"
+            type="search"
+            placeholder="搜索应用名称"
+          />
+          <div class="focus-allowlist-list" id="focusAllowlistList"></div>
+          <p class="form-error" id="focusAllowlistError" hidden></p>
+        </div>
         <div class="confirm-actions">
-          <button class="danger-button" id="discardStoredFocusButton" type="button">结束并保留时间</button>
-          <button class="primary-button" id="resumeStoredFocusButton" type="button">继续专注</button>
+          <button
+            class="secondary-button"
+            id="cancelFocusAllowlistButton"
+            type="button"
+          >
+            取消
+          </button>
+          <button
+            class="primary-button"
+            id="saveFocusAllowlistButton"
+            type="button"
+          >
+            保存允许应用
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="event-dialog" id="focusProjectCalendarDialog">
+      <div class="sheet focus-calendar-sheet">
+        <div class="account-header">
+          <div>
+            <p class="sheet-kicker">单次项目月历</p>
+            <h2 id="focusCalendarTitle">专注月历</h2>
+          </div>
+          <button
+            class="close-button"
+            id="closeFocusCalendarDialog"
+            type="button"
+            aria-label="关闭"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+        <div class="focus-calendar-toolbar">
+          <button
+            class="date-arrow"
+            id="previousFocusCalendarMonth"
+            type="button"
+            aria-label="上个月"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m15 5-7 7 7 7" />
+            </svg>
+          </button>
+          <strong id="focusCalendarMonthTitle"></strong>
+          <button
+            class="secondary-button"
+            id="currentFocusCalendarMonth"
+            type="button"
+          >
+            本月
+          </button>
+          <button
+            class="date-arrow"
+            id="nextFocusCalendarMonth"
+            type="button"
+            aria-label="下个月"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 5 7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+        <div class="focus-calendar-weekdays" aria-hidden="true">
+          <span>一</span><span>二</span><span>三</span><span>四</span>
+          <span>五</span><span>六</span><span>日</span>
+        </div>
+        <div class="focus-calendar-grid" id="focusCalendarGrid"></div>
+        <div class="focus-calendar-summary" id="focusCalendarSummary"></div>
+        <p class="focus-calendar-detail" id="focusCalendarDetail">
+          点击有记录的日期查看当天详情。
+        </p>
+        <p class="focus-calendar-note">
+          月历只读；从 v0.6.3 起按天记录，旧累计时间无法反推日期。
+        </p>
+        <div class="confirm-actions">
+          <button
+            class="secondary-button"
+            id="closeFocusCalendarButton"
+            type="button"
+          >
+            关闭
+          </button>
         </div>
       </div>
     </dialog>
 
     <section class="focus-runner" id="focusRunner" hidden>
       <div class="focus-runner-background" id="focusRunnerBackground"></div>
+      <div class="focus-allowed-apps-panel" id="focusAllowedAppsPanel" hidden>
+        <div class="focus-allowed-apps-sheet">
+          <div class="focus-allowed-apps-header">
+            <div>
+              <strong>白名单应用</strong>
+              <span>打开应用后专注计时仍会继续</span>
+            </div>
+            <button
+              class="focus-panel-close"
+              id="closeFocusAllowedAppsButton"
+              type="button"
+              aria-label="关闭白名单应用"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m6 6 12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
+          <div class="focus-allowed-apps-list" id="focusAllowedAppsList"></div>
+        </div>
+      </div>
       <div class="focus-runner-content">
         <div class="focus-runner-top">
           <span id="focusRunnerTitle">专注</span>
-          <span id="focusRunnerStepLabel"></span>
+          <span class="focus-runner-meta">
+            <button
+              class="focus-allowed-apps-button"
+              id="openFocusAllowedAppsButton"
+              type="button"
+              hidden
+            >
+              白名单应用
+            </button>
+            <span class="focus-lock-warning" id="focusLockWarning" hidden>
+              锁机未生效
+            </span>
+            <span id="focusRunnerStepLabel"></span>
+          </span>
         </div>
         <div class="focus-runner-center">
           <p id="focusRunnerStage">专注</p>
@@ -1892,12 +2069,15 @@
           <div class="focus-runner-progress"><i id="focusRunnerProgress"></i></div>
           <blockquote id="focusRunnerQuote"></blockquote>
         </div>
-        <button class="focus-exit-button" id="exitFocusButton" type="button">提前结束</button>
+        <div class="focus-runner-actions">
+          <button class="focus-pause-button" id="pauseFocusButton" type="button">暂停</button>
+          <button class="focus-exit-button" id="exitFocusButton" type="button">提前结束</button>
+        </div>
       </div>
       <div class="focus-pause-overlay" id="focusPauseOverlay" hidden>
         <div>
-          <strong>专注已自动暂停</strong>
-          <p>离开 Daily Route 期间不会累计时间。</p>
+          <strong>专注已暂停</strong>
+          <p>计时已停止，锁机仍会保留。需要完全离开请选择结束。</p>
           <div class="confirm-actions">
             <button class="danger-button" id="endPausedFocusButton" type="button">结束</button>
             <button class="primary-button" id="continueFocusButton" type="button">继续专注</button>

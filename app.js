@@ -106,6 +106,7 @@ import {
 } from "./drafts.js";
 import {
   addFocusProjectTime,
+  advanceFocusRun,
   clearFocusSession,
   createFocusPassword,
   createFocusRun,
@@ -113,6 +114,8 @@ import {
   focusFlowDurationMinutes,
   focusFlowFromInput,
   focusProjectFromInput,
+  focusRunExpectedEndAt,
+  focusStepElapsedSeconds,
   focusTotalSeconds,
   normalizeFocusSession,
   projectsReferencingFlow,
@@ -171,8 +174,8 @@ import {
   migrationTargetYear as getMigrationTargetYear,
 } from "./year-migration.js";
 
-const APP_VERSION = "0.6.1";
-const APP_VERSION_CODE = 11;
+const APP_VERSION = "0.6.3";
+const APP_VERSION_CODE = 13;
 const SLOT_HEIGHT = 44;
 const PIXELS_PER_MINUTE = SLOT_HEIGHT / 30;
 const nativeApp = isNativeApp();
@@ -551,6 +554,57 @@ const elements = {
   focusPasswordError: document.querySelector("#focusPasswordError"),
   clearFocusPasswordButton: document.querySelector("#clearFocusPasswordButton"),
   cancelFocusPasswordButton: document.querySelector("#cancelFocusPasswordButton"),
+  focusLockCard: document.querySelector("#focusLockCard"),
+  focusLockStatus: document.querySelector("#focusLockStatus"),
+  focusLockBadge: document.querySelector("#focusLockBadge"),
+  focusLockDetail: document.querySelector("#focusLockDetail"),
+  focusAllowedAppsSummary: document.querySelector(
+    "#focusAllowedAppsSummary",
+  ),
+  openFocusLockSettingsButton: document.querySelector(
+    "#openFocusLockSettingsButton",
+  ),
+  configureFocusAllowedAppsButton: document.querySelector(
+    "#configureFocusAllowedAppsButton",
+  ),
+  focusAllowlistDialog: document.querySelector("#focusAllowlistDialog"),
+  closeFocusAllowlistDialog: document.querySelector(
+    "#closeFocusAllowlistDialog",
+  ),
+  focusAllowlistSearch: document.querySelector("#focusAllowlistSearch"),
+  focusAllowlistList: document.querySelector("#focusAllowlistList"),
+  focusAllowlistError: document.querySelector("#focusAllowlistError"),
+  cancelFocusAllowlistButton: document.querySelector(
+    "#cancelFocusAllowlistButton",
+  ),
+  saveFocusAllowlistButton: document.querySelector(
+    "#saveFocusAllowlistButton",
+  ),
+  focusProjectCalendarDialog: document.querySelector(
+    "#focusProjectCalendarDialog",
+  ),
+  focusCalendarTitle: document.querySelector("#focusCalendarTitle"),
+  closeFocusCalendarDialog: document.querySelector(
+    "#closeFocusCalendarDialog",
+  ),
+  previousFocusCalendarMonth: document.querySelector(
+    "#previousFocusCalendarMonth",
+  ),
+  focusCalendarMonthTitle: document.querySelector(
+    "#focusCalendarMonthTitle",
+  ),
+  currentFocusCalendarMonth: document.querySelector(
+    "#currentFocusCalendarMonth",
+  ),
+  nextFocusCalendarMonth: document.querySelector(
+    "#nextFocusCalendarMonth",
+  ),
+  focusCalendarGrid: document.querySelector("#focusCalendarGrid"),
+  focusCalendarSummary: document.querySelector("#focusCalendarSummary"),
+  focusCalendarDetail: document.querySelector("#focusCalendarDetail"),
+  closeFocusCalendarButton: document.querySelector(
+    "#closeFocusCalendarButton",
+  ),
   focusRunner: document.querySelector("#focusRunner"),
   focusRunnerBackground: document.querySelector("#focusRunnerBackground"),
   focusRunnerTitle: document.querySelector("#focusRunnerTitle"),
@@ -559,6 +613,16 @@ const elements = {
   focusRunnerTime: document.querySelector("#focusRunnerTime"),
   focusRunnerProgress: document.querySelector("#focusRunnerProgress"),
   focusRunnerStepLabel: document.querySelector("#focusRunnerStepLabel"),
+  focusLockWarning: document.querySelector("#focusLockWarning"),
+  openFocusAllowedAppsButton: document.querySelector(
+    "#openFocusAllowedAppsButton",
+  ),
+  focusAllowedAppsPanel: document.querySelector("#focusAllowedAppsPanel"),
+  closeFocusAllowedAppsButton: document.querySelector(
+    "#closeFocusAllowedAppsButton",
+  ),
+  focusAllowedAppsList: document.querySelector("#focusAllowedAppsList"),
+  pauseFocusButton: document.querySelector("#pauseFocusButton"),
   exitFocusButton: document.querySelector("#exitFocusButton"),
   focusPauseOverlay: document.querySelector("#focusPauseOverlay"),
   continueFocusButton: document.querySelector("#continueFocusButton"),
@@ -576,10 +640,6 @@ const elements = {
   focusPasswordResetError: document.querySelector("#focusPasswordResetError"),
   cancelFocusPasswordResetButton: document.querySelector("#cancelFocusPasswordResetButton"),
   confirmFocusPasswordResetButton: document.querySelector("#confirmFocusPasswordResetButton"),
-  focusSessionDialog: document.querySelector("#focusSessionDialog"),
-  focusSessionMessage: document.querySelector("#focusSessionMessage"),
-  resumeStoredFocusButton: document.querySelector("#resumeStoredFocusButton"),
-  discardStoredFocusButton: document.querySelector("#discardStoredFocusButton"),
   focusQuoteInput: document.querySelector("#focusQuoteInput"),
   addFocusQuoteButton: document.querySelector("#addFocusQuoteButton"),
   focusQuoteList: document.querySelector("#focusQuoteList"),
@@ -661,12 +721,24 @@ const state = {
   focusFlowDraftSteps: [],
   focusRun: null,
   focusTimer: null,
-  focusPausedReason: null,
   focusAssetUrl: null,
+  focusAssetWallpaperId: null,
   focusRunFinished: false,
+  focusLockStatus: {
+    supported: nativeApp,
+    serviceEnabled: false,
+    allowedPackages: [],
+    error: null,
+  },
+  focusLaunchableApps: [],
+  focusAllowlistDraft: new Set(),
+  focusCalendarProjectId: null,
+  focusCalendarMonth: startOfMonth(todayISO()),
+  focusCalendarSelectedDate: null,
 };
 
 let toastTimer = null;
+let focusLockSyncQueue = Promise.resolve();
 
 function startOfWeek(isoDate) {
   return addDays(isoDate, -mondayBasedWeekday(isoDate));
@@ -881,6 +953,7 @@ async function refreshNativeNotifications() {
   }
 
   try {
+    const focusCompletionAt = focusRunExpectedEndAt(state.focusRun);
     state.notificationStatus =
       await syncScheduledNotifications(state.events, {
         endDate: `${Math.max(
@@ -894,6 +967,13 @@ async function refreshNativeNotifications() {
             Number(todayISO().slice(0, 4)) + 1,
           targetYear: Number(todayISO().slice(0, 4)) + 1,
         },
+        focusCompletion: focusCompletionAt
+          ? {
+              sessionId: state.focusRun.id,
+              title: state.focusRun.title,
+              at: focusCompletionAt,
+            }
+          : null,
       });
   } catch (error) {
     console.error("同步活动提醒失败", error);
@@ -1089,7 +1169,24 @@ function handleNotificationAction({
   occurrenceDate,
   effectiveDate,
   activityKind,
+  focusSessionId,
 }) {
+  if (activityKind === "focusCompletion") {
+    if (state.focusRun) {
+      void displayFocusRunner(state.focusRun).then(() => {
+        tickFocusRun();
+      });
+    } else {
+      state.view = "focus";
+      render();
+      showToast(
+        focusSessionId
+          ? "这次专注已经结束"
+          : "已打开专注空间",
+      );
+    }
+    return;
+  }
   if (activityKind === "yearMigration") {
     state.view = "activity";
     state.archiveMode = false;
@@ -2510,6 +2607,125 @@ function focusFlowSummary(flow) {
     .join(" → ");
 }
 
+function formatFocusHistoryDuration(seconds) {
+  const value = Math.max(0, Math.floor(Number(seconds) || 0));
+  if (value < 60) {
+    return `${value} 秒`;
+  }
+  const minutes = Math.floor(value / 60);
+  if (minutes < 60) {
+    return `${minutes} 分钟`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder > 0
+    ? `${hours} 小时 ${remainder} 分钟`
+    : `${hours} 小时`;
+}
+
+function focusHistoryEntry(project, date) {
+  return (
+    project.dailyHistory.find((entry) => entry.date === date) ?? null
+  );
+}
+
+function openFocusProjectCalendar(project) {
+  state.focusCalendarProjectId = project.id;
+  state.focusCalendarSelectedDate = null;
+  const latest = project.dailyHistory.at(-1)?.date ?? todayISO();
+  state.focusCalendarMonth = startOfMonth(latest);
+  elements.focusProjectCalendarDialog.showModal();
+  renderFocusProjectCalendar();
+}
+
+function renderFocusProjectCalendar() {
+  const project = focusProjectById(state.focusCalendarProjectId);
+  if (!project) {
+    elements.focusProjectCalendarDialog.close();
+    return;
+  }
+  const monthStart = startOfMonth(state.focusCalendarMonth);
+  const monthEnd = endOfMonth(monthStart);
+  const firstHistoryDate = project.dailyHistory[0]?.date;
+  const firstMonth = startOfMonth(firstHistoryDate ?? monthStart);
+  const lastMonth = startOfMonth(todayISO());
+  const gridStart = addDays(
+    monthStart,
+    -mondayBasedWeekday(monthStart),
+  );
+  const monthEntries = project.dailyHistory.filter(
+    (entry) => entry.date >= monthStart && entry.date <= monthEnd,
+  );
+  const monthSeconds = monthEntries.reduce(
+    (total, entry) => total + entry.seconds,
+    0,
+  );
+  const monthRuns = monthEntries.reduce(
+    (total, entry) => total + entry.completedRuns,
+    0,
+  );
+  elements.focusCalendarTitle.textContent = `${project.title}的月历`;
+  elements.focusCalendarMonthTitle.textContent =
+    formatMonthTitle(monthStart);
+  elements.previousFocusCalendarMonth.disabled =
+    monthStart <= firstMonth;
+  elements.nextFocusCalendarMonth.disabled =
+    monthStart >= lastMonth;
+  elements.currentFocusCalendarMonth.disabled =
+    monthStart === lastMonth;
+  elements.focusCalendarSummary.textContent =
+    `${project.type === "focus" ? "专注" : "休息"} · ` +
+    `${monthEntries.length} 天有记录 · ` +
+    `${formatFocusHistoryDuration(monthSeconds)} · ${monthRuns} 次完成`;
+
+  const selected = state.focusCalendarSelectedDate
+    ? focusHistoryEntry(project, state.focusCalendarSelectedDate)
+    : null;
+  elements.focusCalendarDetail.textContent = selected
+    ? `${formatShortDate(selected.date)}：${formatFocusHistoryDuration(selected.seconds)}，${selected.completedRuns} 次完成。`
+    : state.focusCalendarSelectedDate
+      ? `${formatShortDate(state.focusCalendarSelectedDate)}：当天没有记录。`
+      : "点击日期查看当天的专注时间和完成次数。";
+
+  const fragment = document.createDocumentFragment();
+  for (let offset = 0; offset < 42; offset += 1) {
+    const date = addDays(gridStart, offset);
+    const entry = focusHistoryEntry(project, date);
+    const inMonth = date >= monthStart && date <= monthEnd;
+    const button = document.createElement("button");
+    const day = document.createElement("strong");
+    const duration = document.createElement("small");
+    button.type = "button";
+    button.className = "focus-calendar-day";
+    button.disabled = !inMonth;
+    button.classList.toggle("is-outside", !inMonth);
+    button.classList.toggle("is-today", date === todayISO());
+    button.classList.toggle("is-active", Boolean(entry));
+    button.classList.toggle(
+      "is-selected",
+      date === state.focusCalendarSelectedDate,
+    );
+    day.textContent = String(parseISODate(date).getDate());
+    duration.textContent = entry
+      ? formatFocusHistoryDuration(entry.seconds)
+          .replace(" 小时", "时")
+          .replace(" 分钟", "分")
+          .replace(" 秒", "秒")
+      : "";
+    button.setAttribute(
+      "aria-label",
+      `${formatShortDate(date)}${entry ? `，${formatFocusHistoryDuration(entry.seconds)}` : "，无记录"}`,
+    );
+    button.addEventListener("click", () => {
+      state.focusCalendarSelectedDate = date;
+      renderFocusProjectCalendar();
+    });
+    button.append(day, duration);
+    fragment.append(button);
+  }
+  elements.focusCalendarGrid.replaceChildren(fragment);
+}
+
 function requestDeleteFocusProject(project) {
   const references = projectsReferencingFlow(
     state.focusFlows,
@@ -2564,6 +2780,7 @@ function createFocusProjectRow(project) {
   const actions = document.createElement("div");
   const start = document.createElement("button");
   const edit = document.createElement("button");
+  const calendar = document.createElement("button");
   const remove = document.createElement("button");
   row.className = `focus-project-row is-${project.type}`;
   title.textContent = project.title;
@@ -2583,6 +2800,12 @@ function createFocusProjectRow(project) {
   edit.className = "secondary-button";
   edit.textContent = "编辑";
   edit.addEventListener("click", () => openFocusProjectDialog(project));
+  calendar.type = "button";
+  calendar.className = "secondary-button";
+  calendar.textContent = "月历";
+  calendar.addEventListener("click", () =>
+    openFocusProjectCalendar(project),
+  );
   remove.type = "button";
   remove.className = "activity-delete";
   remove.textContent = "删除";
@@ -2590,7 +2813,7 @@ function createFocusProjectRow(project) {
     requestDeleteFocusProject(project),
   );
   actions.className = "focus-row-actions";
-  actions.append(start, edit, remove);
+  actions.append(start, edit, calendar, remove);
   row.append(copy, actions);
   return row;
 }
@@ -2769,6 +2992,309 @@ function renderFocusWallpapers() {
   }
 }
 
+function renderFocusLockCard() {
+  if (!elements.focusLockCard) {
+    return;
+  }
+  elements.focusLockCard.hidden = !nativeApp;
+  if (!nativeApp) {
+    return;
+  }
+  const ready = state.focusLockStatus.serviceEnabled;
+  elements.focusLockStatus.textContent = ready
+    ? "无障碍服务已开启，开始专注后自动锁机。"
+    : "无障碍服务未开启，专注仍可使用，但不会拦截其他应用。";
+  elements.focusLockBadge.textContent = ready ? "已就绪" : "未开启";
+  elements.focusLockBadge.classList.toggle("is-enabled", ready);
+  elements.focusLockBadge.classList.toggle("is-warning", !ready);
+  elements.focusLockDetail.textContent = state.focusLockStatus.error
+    ? state.focusLockStatus.error
+    : "锁屏、通知栏、权限确认和紧急入口始终允许；系统设置不自动放行。";
+  const allowed = state.focusLockStatus.allowedPackages;
+  const names = allowed
+    .map(
+      (packageName) =>
+        state.focusLaunchableApps.find(
+          (app) => app.packageName === packageName,
+        )?.label ?? packageName,
+    )
+    .filter(Boolean);
+  elements.focusAllowedAppsSummary.textContent =
+    names.length > 0
+      ? `允许应用：${names.join("、")}`
+      : "尚未选择允许应用；专注时只保留系统安全界面。";
+  renderFocusAllowedAppsButton();
+}
+
+function updateFocusLockIndicator() {
+  if (!elements.focusLockWarning) {
+    return;
+  }
+  elements.focusLockWarning.hidden =
+    !nativeApp || state.focusLockStatus.serviceEnabled;
+}
+
+async function refreshFocusLockStatus() {
+  if (!nativeApp) {
+    return;
+  }
+  const plugin = globalThis.DailyRouteNative?.DailyRouteDevice;
+  if (!plugin?.getFocusLockStatus) {
+    state.focusLockStatus = {
+      supported: false,
+      serviceEnabled: false,
+      allowedPackages: [],
+      error: "当前安装包不支持专注锁机。",
+    };
+    renderFocusLockCard();
+    updateFocusLockIndicator();
+    return;
+  }
+  try {
+    const status = await plugin.getFocusLockStatus();
+    state.focusLockStatus = {
+      supported: true,
+      serviceEnabled: status.serviceEnabled === true,
+      allowedPackages: Array.isArray(status.allowedPackages)
+        ? status.allowedPackages
+        : [],
+      error: null,
+    };
+  } catch (error) {
+    state.focusLockStatus = {
+      supported: true,
+      serviceEnabled: false,
+      allowedPackages: state.focusLockStatus.allowedPackages,
+      error: error.message || "无法读取专注锁机状态。",
+    };
+  }
+  renderFocusLockCard();
+  updateFocusLockIndicator();
+  if (
+    state.focusLockStatus.allowedPackages.length > 0 &&
+    state.focusLaunchableApps.length === 0
+  ) {
+    void loadFocusLaunchableApps()
+      .then(renderFocusLockCard)
+      .catch(() => {});
+  }
+}
+
+function syncNativeFocusLock() {
+  if (!nativeApp) {
+    return Promise.resolve();
+  }
+  const plugin = globalThis.DailyRouteNative?.DailyRouteDevice;
+  if (!plugin?.setFocusLock) {
+    return Promise.resolve();
+  }
+  const enabled = Boolean(state.focusRun);
+  const allowedPackages = [...state.focusLockStatus.allowedPackages];
+  const next = focusLockSyncQueue.then(
+    async () => {
+      try {
+        await plugin.setFocusLock({ enabled, allowedPackages });
+      } catch (error) {
+        state.focusLockStatus.error =
+          error.message || "无法同步专注锁机状态。";
+        renderFocusLockCard();
+      }
+    },
+    async () => {
+      try {
+        await plugin.setFocusLock({ enabled, allowedPackages });
+      } catch (error) {
+        state.focusLockStatus.error =
+          error.message || "无法同步专注锁机状态。";
+        renderFocusLockCard();
+      }
+    },
+  );
+  focusLockSyncQueue = next.catch(() => {});
+  return next;
+}
+
+function renderFocusAllowlistRows() {
+  const query = elements.focusAllowlistSearch.value
+    .trim()
+    .toLocaleLowerCase("zh-CN");
+  const apps = state.focusLaunchableApps.filter((app) =>
+    app.label.toLocaleLowerCase("zh-CN").includes(query),
+  );
+  if (apps.length === 0) {
+    elements.focusAllowlistList.replaceChildren(
+      createListEmpty("没有匹配的可启动应用"),
+    );
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  for (const app of apps) {
+    const row = document.createElement("label");
+    const checkbox = document.createElement("input");
+    const label = document.createElement("span");
+    row.className = "focus-allowlist-row";
+    checkbox.type = "checkbox";
+    checkbox.checked = state.focusAllowlistDraft.has(app.packageName);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        state.focusAllowlistDraft.add(app.packageName);
+      } else {
+        state.focusAllowlistDraft.delete(app.packageName);
+      }
+    });
+    label.textContent = app.label;
+    row.append(checkbox, label);
+    fragment.append(row);
+  }
+  elements.focusAllowlistList.replaceChildren(fragment);
+}
+
+async function loadFocusLaunchableApps() {
+  const plugin = globalThis.DailyRouteNative?.DailyRouteDevice;
+  if (!plugin?.listLaunchableApps) {
+    throw new Error("当前安装包不支持读取应用列表");
+  }
+  const result = await plugin.listLaunchableApps();
+  state.focusLaunchableApps = (
+    Array.isArray(result.apps) ? result.apps : []
+  ).sort((left, right) =>
+    left.label.localeCompare(right.label, "zh-CN"),
+  );
+  renderFocusAllowedAppsButton();
+  return state.focusLaunchableApps;
+}
+
+function allowedRunApps() {
+  return state.focusLockStatus.allowedPackages
+    .map(
+      (packageName) =>
+        state.focusLaunchableApps.find(
+          (app) => app.packageName === packageName,
+        ) ?? null,
+    )
+    .filter(Boolean);
+}
+
+function renderFocusAllowedAppsButton() {
+  if (!elements.openFocusAllowedAppsButton) {
+    return;
+  }
+  elements.openFocusAllowedAppsButton.hidden =
+    !nativeApp ||
+    !state.focusRun ||
+    state.focusLockStatus.allowedPackages.length === 0;
+}
+
+function renderFocusAllowedAppsList() {
+  const apps = allowedRunApps();
+  if (apps.length === 0) {
+    elements.focusAllowedAppsList.replaceChildren(
+      createListEmpty("当前白名单应用不可用"),
+    );
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  for (const app of apps) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "focus-allowed-app-button";
+    button.textContent = app.label;
+    button.addEventListener("click", () =>
+      launchFocusedAllowedApp(app),
+    );
+    fragment.append(button);
+  }
+  elements.focusAllowedAppsList.replaceChildren(fragment);
+}
+
+async function openFocusAllowedAppsPanel() {
+  if (!nativeApp || !state.focusRun) {
+    return;
+  }
+  elements.focusAllowedAppsPanel.hidden = false;
+  elements.focusAllowedAppsList.replaceChildren(
+    createListEmpty("正在读取白名单应用…"),
+  );
+  try {
+    if (state.focusLaunchableApps.length === 0) {
+      await loadFocusLaunchableApps();
+    }
+    renderFocusAllowedAppsList();
+  } catch (error) {
+    elements.focusAllowedAppsList.replaceChildren(
+      createListEmpty(error.message || "无法读取白名单应用"),
+    );
+  }
+}
+
+function closeFocusAllowedAppsPanel() {
+  elements.focusAllowedAppsPanel.hidden = true;
+}
+
+async function launchFocusedAllowedApp(app) {
+  const plugin = globalThis.DailyRouteNative?.DailyRouteDevice;
+  if (!plugin?.openFocusAllowedApp) {
+    showToast("当前安装包无法启动白名单应用");
+    return;
+  }
+  try {
+    await plugin.openFocusAllowedApp({
+      packageName: app.packageName,
+    });
+    closeFocusAllowedAppsPanel();
+  } catch (error) {
+    showToast(error.message || "无法打开白名单应用");
+  }
+}
+
+async function openFocusAllowlistDialog() {
+  if (!nativeApp) {
+    return;
+  }
+  state.focusAllowlistDraft = new Set(
+    state.focusLockStatus.allowedPackages,
+  );
+  elements.focusAllowlistSearch.value = "";
+  elements.focusAllowlistError.hidden = true;
+  elements.focusAllowlistList.replaceChildren(
+    createListEmpty("正在读取已安装应用…"),
+  );
+  elements.focusAllowlistDialog.showModal();
+  try {
+    await loadFocusLaunchableApps();
+    renderFocusAllowlistRows();
+  } catch (error) {
+    elements.focusAllowlistError.textContent =
+      error.message || "无法读取应用列表";
+    elements.focusAllowlistError.hidden = false;
+    elements.focusAllowlistList.replaceChildren(
+      createListEmpty("应用列表不可用"),
+    );
+  }
+}
+
+async function saveFocusAllowlist() {
+  const plugin = globalThis.DailyRouteNative?.DailyRouteDevice;
+  if (!plugin?.setFocusLockAllowedPackages) {
+    elements.focusAllowlistError.textContent =
+      "当前安装包不支持保存应用白名单";
+    elements.focusAllowlistError.hidden = false;
+    return;
+  }
+  try {
+    const allowedPackages = [...state.focusAllowlistDraft];
+    await plugin.setFocusLockAllowedPackages({ allowedPackages });
+    state.focusLockStatus.allowedPackages = allowedPackages;
+    elements.focusAllowlistDialog.close();
+    renderFocusLockCard();
+    showToast("专注锁机白名单已保存");
+  } catch (error) {
+    elements.focusAllowlistError.textContent =
+      error.message || "无法保存应用白名单";
+    elements.focusAllowlistError.hidden = false;
+  }
+}
+
 function renderFocus() {
   elements.viewKicker.textContent = "专注";
   elements.viewTitle.textContent = "专注空间";
@@ -2782,6 +3308,7 @@ function renderFocus() {
     : "专注密码未设置；提前结束仍会二次确认。";
   elements.configureFocusPasswordButton.textContent =
     state.focusPassword ? "修改专注密码" : "设置专注密码";
+  renderFocusLockCard();
   const projectFragment = document.createDocumentFragment();
   if (state.focusProjects.length === 0) {
     projectFragment.append(
@@ -3169,41 +3696,88 @@ function randomItem(items) {
     : null;
 }
 
-async function setFocusRunnerVisuals() {
-  const wallpaper = randomItem(state.focusWallpapers);
-  const quote = randomItem(state.focusQuotes);
+function releaseFocusAsset() {
   if (state.focusAssetUrl) {
     URL.revokeObjectURL(state.focusAssetUrl);
-    state.focusAssetUrl = null;
   }
+  state.focusAssetUrl = null;
+  state.focusAssetWallpaperId = null;
   elements.focusRunnerBackground.style.backgroundImage = "";
+}
+
+function paintFocusRunnerBackground(url) {
+  elements.focusRunnerBackground.style.backgroundImage = url
+    ? `linear-gradient(rgb(8 14 24 / 58%), rgb(8 14 24 / 68%)), url("${url}")`
+    : "";
+}
+
+function focusItemById(items, id) {
+  return items.find((item) => item.id === id) ?? null;
+}
+
+function assignFocusRunVisuals(session = state.focusRun) {
+  if (!session) {
+    return false;
+  }
+  let changed = false;
+  if (
+    !session.wallpaperId &&
+    state.focusWallpapers.length > 0
+  ) {
+    session.wallpaperId = randomItem(state.focusWallpapers).id;
+    changed = true;
+  }
+  if (!session.quoteId && state.focusQuotes.length > 0) {
+    session.quoteId = randomItem(state.focusQuotes).id;
+    changed = true;
+  }
+  return changed;
+}
+
+async function setFocusRunnerVisuals({ reload = false } = {}) {
+  const session = state.focusRun;
+  if (!session) {
+    return;
+  }
+  if (assignFocusRunVisuals(session)) {
+    writeFocusSession(session);
+  }
+  const quote = focusItemById(state.focusQuotes, session.quoteId);
   elements.focusRunnerQuote.textContent = quote?.text ?? "";
   elements.focusRunnerQuote.hidden = !quote;
+  const wallpaper = focusItemById(
+    state.focusWallpapers,
+    session.wallpaperId,
+  );
+  if (!wallpaper) {
+    releaseFocusAsset();
+    return;
+  }
+  if (
+    !reload &&
+    state.focusAssetUrl &&
+    state.focusAssetWallpaperId === wallpaper.id
+  ) {
+    paintFocusRunnerBackground(state.focusAssetUrl);
+    return;
+  }
   if (wallpaper) {
     try {
       const blob = await readWallpaperAsset(wallpaper.id);
-      if (blob && !state.focusRunFinished) {
+      if (
+        blob &&
+        state.focusRun?.wallpaperId === wallpaper.id &&
+        !state.focusRunFinished
+      ) {
+        releaseFocusAsset();
         state.focusAssetUrl = URL.createObjectURL(blob);
-        elements.focusRunnerBackground.style.backgroundImage =
-          `linear-gradient(rgb(8 14 24 / 58%), rgb(8 14 24 / 68%)), url("${state.focusAssetUrl}")`;
+        state.focusAssetWallpaperId = wallpaper.id;
+        paintFocusRunnerBackground(state.focusAssetUrl);
       }
     } catch {
       // The blank runner remains available when local assets cannot load.
     }
   }
-}
-
-function focusStepElapsedSeconds(session, now = Date.now()) {
-  const runningSeconds =
-    session?.status === "running" && session.currentStepStartedAt
-      ? Math.max(
-          0,
-          Math.floor(
-            (now - Date.parse(session.currentStepStartedAt)) / 1000,
-          ),
-        )
-      : 0;
-  return session.stepElapsedSeconds + runningSeconds;
 }
 
 function currentFocusStep(session = state.focusRun) {
@@ -3236,36 +3810,57 @@ function updateFocusRunner() {
     "is-rest",
     step.type === "rest",
   );
+  updateFocusLockIndicator();
+  renderFocusAllowedAppsButton();
 }
 
 function persistFocusRunProgress(session = state.focusRun) {
   if (!session) {
     return;
   }
-  const elapsed = Math.min(
-    session.steps[session.stepIndex].durationSeconds,
-    focusStepElapsedSeconds(session),
-  );
-  writeFocusSession({
-    ...session,
-    stepElapsedSeconds: elapsed,
-    currentStepStartedAt:
-      session.status === "running"
-        ? new Date().toISOString()
-        : null,
-  });
+  if (session.status === "running") {
+    const advanced = advanceFocusRun(
+      session,
+      state.focusProjects,
+      new Date(),
+    );
+    state.focusRun = advanced.session;
+    state.focusProjects = advanced.projects;
+    if (advanced.completedSteps.length > 0) {
+      persistEvents();
+    }
+    writeFocusSession(state.focusRun);
+    return;
+  }
+  writeFocusSession(session);
 }
 
-function pauseFocusRun({ automatic = false } = {}) {
+function pauseFocusRun() {
   if (!state.focusRun || state.focusRun.status !== "running") {
     return;
   }
+  const advanced = advanceFocusRun(
+    state.focusRun,
+    state.focusProjects,
+    new Date(),
+  );
+  state.focusRun = advanced.session;
+  state.focusProjects = advanced.projects;
+  if (advanced.completedSteps.length > 0) {
+    persistEvents();
+  }
+  if (advanced.finished) {
+    finishFocusRun();
+    showToast("本次专注已完成");
+    return;
+  }
+  const step = currentFocusStep(advanced.session);
   const elapsed = Math.min(
-    currentFocusStep().durationSeconds,
-    focusStepElapsedSeconds(state.focusRun),
+    step.durationSeconds,
+    focusStepElapsedSeconds(advanced.session),
   );
   state.focusRun = {
-    ...state.focusRun,
+    ...advanced.session,
     status: "paused",
     stepElapsedSeconds: elapsed,
     currentStepStartedAt: null,
@@ -3273,9 +3868,10 @@ function pauseFocusRun({ automatic = false } = {}) {
   writeFocusSession(state.focusRun);
   window.clearInterval(state.focusTimer);
   state.focusTimer = null;
-  state.focusPausedReason = automatic ? "app-background" : "manual";
   elements.focusPauseOverlay.hidden = false;
+  closeFocusAllowedAppsPanel();
   updateFocusRunner();
+  void refreshNativeNotifications();
 }
 
 function resumeFocusRun() {
@@ -3287,17 +3883,14 @@ function resumeFocusRun() {
     status: "running",
     currentStepStartedAt: new Date().toISOString(),
   };
-  state.focusPausedReason = null;
-  if (state.focusAssetUrl) {
-    URL.revokeObjectURL(state.focusAssetUrl);
-    state.focusAssetUrl = null;
-  }
-  elements.focusRunnerBackground.style.backgroundImage = "";
   elements.focusPauseOverlay.hidden = true;
+  closeFocusAllowedAppsPanel();
   writeFocusSession(state.focusRun);
   window.clearInterval(state.focusTimer);
   state.focusTimer = window.setInterval(tickFocusRun, 250);
   updateFocusRunner();
+  void setFocusRunnerVisuals();
+  void refreshNativeNotifications();
 }
 
 function addCurrentFocusTime(completed) {
@@ -3323,9 +3916,12 @@ function finishFocusRun() {
   clearFocusSession();
   state.focusRun = null;
   state.focusRunFinished = true;
-  state.focusPausedReason = null;
+  releaseFocusAsset();
+  elements.focusLockWarning.hidden = true;
   elements.focusPauseOverlay.hidden = true;
   elements.focusRunner.hidden = true;
+  closeFocusAllowedAppsPanel();
+  renderFocusAllowedAppsButton();
   document.body.classList.remove("focus-running");
   elements.appShell.hidden = false;
   if (nativeApp) {
@@ -3338,45 +3934,43 @@ function finishFocusRun() {
   persistEvents();
   state.view = "focus";
   render();
+  void syncNativeFocusLock();
+  void refreshNativeNotifications();
 }
 
 function tickFocusRun() {
-  if (!state.focusRun || state.focusRun.status !== "running") {
+  if (!state.focusRun) {
     return;
   }
-  const step = currentFocusStep();
-  const elapsed = focusStepElapsedSeconds(state.focusRun);
-  if (elapsed < step.durationSeconds) {
-    updateFocusRunner();
-    if (Date.now() - state.lastFocusCheckpoint >= 5000) {
-      persistFocusRunProgress();
-      state.lastFocusCheckpoint = Date.now();
-    }
-    return;
-  }
-  state.focusRun = {
-    ...state.focusRun,
-    stepElapsedSeconds: step.durationSeconds,
-    currentStepStartedAt: null,
-  };
-  addCurrentFocusTime(true);
-  persistEvents();
-  const nextIndex = state.focusRun.stepIndex + 1;
-  if (nextIndex >= state.focusRun.steps.length) {
+  if (state.focusRun.status === "completed") {
     finishFocusRun();
     showToast("本次专注已完成");
     return;
   }
-  state.focusRun = {
-    ...state.focusRun,
-    stepIndex: nextIndex,
-    stepElapsedSeconds: 0,
-    currentStepStartedAt: new Date().toISOString(),
-    status: "running",
-    updatedAt: new Date().toISOString(),
-  };
-  writeFocusSession(state.focusRun);
+  if (state.focusRun.status !== "running") {
+    return;
+  }
+  const advanced = advanceFocusRun(
+    state.focusRun,
+    state.focusProjects,
+    new Date(),
+  );
+  const changedStep = advanced.completedSteps.length > 0;
+  state.focusRun = advanced.session;
+  state.focusProjects = advanced.projects;
+  if (changedStep) {
+    persistEvents();
+  }
+  if (advanced.finished) {
+    finishFocusRun();
+    showToast("本次专注已完成");
+    return;
+  }
   updateFocusRunner();
+  if (Date.now() - state.lastFocusCheckpoint >= 5000) {
+    writeFocusSession(state.focusRun);
+    state.lastFocusCheckpoint = Date.now();
+  }
 }
 
 async function displayFocusRunner(session) {
@@ -3387,8 +3981,17 @@ async function displayFocusRunner(session) {
   elements.focusRunner.hidden = false;
   document.body.classList.add("focus-running");
   elements.focusPauseOverlay.hidden = session.status !== "paused";
-  await setFocusRunnerVisuals();
+  await setFocusRunnerVisuals({ reload: true });
   updateFocusRunner();
+  if (nativeApp) {
+    await refreshFocusLockStatus();
+  }
+  elements.focusLockWarning.hidden =
+    !nativeApp || state.focusLockStatus.serviceEnabled;
+  if (session.status === "running") {
+    window.clearInterval(state.focusTimer);
+    state.focusTimer = window.setInterval(tickFocusRun, 250);
+  }
   if (nativeApp) {
     try {
       await globalThis.DailyRouteNative?.DailyRouteDevice?.setFocusMode?.({
@@ -3404,12 +4007,30 @@ async function displayFocusRunner(session) {
       // Browsers may reject fullscreen outside a direct user gesture.
     }
   }
+  await syncNativeFocusLock();
+  void refreshNativeNotifications();
+  renderFocusAllowedAppsButton();
+  if (nativeApp && state.focusLockStatus.allowedPackages.length > 0) {
+    void loadFocusLaunchableApps()
+      .then(renderFocusAllowedAppsList)
+      .catch(() => {});
+  }
 }
 
 async function startFocus(project, flow) {
   if (state.focusRun) {
     showToast("已有正在进行的专注");
     return;
+  }
+  if (nativeApp) {
+    try {
+      const permission = await requestNotificationPermission();
+      if (!permission.granted) {
+        showToast("通知未开启，专注完成时不会发送提醒");
+      }
+    } catch {
+      // Focus can continue when notification permission cannot be requested.
+    }
   }
   const session = createFocusRun({
     project,
@@ -3420,19 +4041,21 @@ async function startFocus(project, flow) {
     showToast("这个专注没有可运行的步骤");
     return;
   }
+  session.wallpaperId = randomItem(state.focusWallpapers)?.id ?? null;
+  session.quoteId = randomItem(state.focusQuotes)?.id ?? null;
   writeFocusSession(session);
   state.lastFocusCheckpoint = Date.now();
   await displayFocusRunner(session);
-  if (session.status === "running") {
-    state.focusTimer = window.setInterval(tickFocusRun, 250);
-  }
 }
 
 function openFocusExitDialog() {
   if (!state.focusRun) {
     return;
   }
-  pauseFocusRun({ automatic: false });
+  pauseFocusRun();
+  if (!state.focusRun) {
+    return;
+  }
   elements.focusExitPassword.value = "";
   elements.focusExitPasswordField.hidden = !state.focusPassword;
   elements.focusExitError.hidden = true;
@@ -3466,26 +4089,18 @@ function maybeRestoreFocusSession() {
     return false;
   }
   state.focusRun = stored;
-  elements.focusSessionMessage.textContent =
-    `“${stored.title}”上次已暂停在第 ${stored.stepIndex + 1} 步。继续会从当前位置恢复。`;
-  elements.focusSessionDialog.showModal();
-  return true;
-}
-
-async function resumeStoredFocus() {
-  const session = state.focusRun;
-  elements.focusSessionDialog.close();
-  if (!session) {
-    return;
+  if (stored.status === "completed") {
+    finishFocusRun();
+    showToast("本次专注已完成");
+    return true;
   }
-  await displayFocusRunner(session);
-}
-
-function discardStoredFocus() {
-  elements.focusSessionDialog.close();
-  addCurrentFocusTime(false);
-  finishFocusRun();
-  showToast("上次专注已结束，已完成时间已保留");
+  state.lastFocusCheckpoint = Date.now();
+  void displayFocusRunner(stored).then(() => {
+    if (stored.status === "running") {
+      tickFocusRun();
+    }
+  });
+  return true;
 }
 
 function reviewEntryForDate(date) {
@@ -6225,7 +6840,10 @@ function bindEvents() {
     requestReviewLeave(() => setView("month")),
   );
   elements.focusNavButton.addEventListener("click", () =>
-    requestReviewLeave(() => setView("focus")),
+    requestReviewLeave(() => {
+      setView("focus");
+      void refreshFocusLockStatus();
+    }),
   );
   elements.reviewNavButton.addEventListener("click", () =>
     requestReviewLeave(() => setView("review")),
@@ -6311,6 +6929,67 @@ function bindEvents() {
     "click",
     confirmClearFocusPassword,
   );
+  elements.openFocusLockSettingsButton.addEventListener("click", async () => {
+    try {
+      await globalThis.DailyRouteNative?.DailyRouteDevice
+        ?.openFocusLockSettings?.();
+    } catch (error) {
+      showToast(error.message || "无法打开无障碍设置");
+    }
+  });
+  elements.configureFocusAllowedAppsButton.addEventListener(
+    "click",
+    openFocusAllowlistDialog,
+  );
+  elements.closeFocusAllowlistDialog.addEventListener("click", () => {
+    elements.focusAllowlistDialog.close();
+  });
+  elements.cancelFocusAllowlistButton.addEventListener("click", () => {
+    elements.focusAllowlistDialog.close();
+  });
+  elements.focusAllowlistSearch.addEventListener(
+    "input",
+    renderFocusAllowlistRows,
+  );
+  elements.saveFocusAllowlistButton.addEventListener(
+    "click",
+    saveFocusAllowlist,
+  );
+  elements.closeFocusCalendarDialog.addEventListener("click", () => {
+    elements.focusProjectCalendarDialog.close();
+  });
+  elements.closeFocusCalendarButton.addEventListener("click", () => {
+    elements.focusProjectCalendarDialog.close();
+  });
+  elements.previousFocusCalendarMonth.addEventListener("click", () => {
+    state.focusCalendarMonth = addMonthsToMonth(
+      state.focusCalendarMonth,
+      -1,
+    );
+    state.focusCalendarSelectedDate = null;
+    renderFocusProjectCalendar();
+  });
+  elements.nextFocusCalendarMonth.addEventListener("click", () => {
+    state.focusCalendarMonth = addMonthsToMonth(
+      state.focusCalendarMonth,
+      1,
+    );
+    state.focusCalendarSelectedDate = null;
+    renderFocusProjectCalendar();
+  });
+  elements.currentFocusCalendarMonth.addEventListener("click", () => {
+    state.focusCalendarMonth = startOfMonth(todayISO());
+    state.focusCalendarSelectedDate = null;
+    renderFocusProjectCalendar();
+  });
+  elements.openFocusAllowedAppsButton.addEventListener(
+    "click",
+    openFocusAllowedAppsPanel,
+  );
+  elements.closeFocusAllowedAppsButton.addEventListener(
+    "click",
+    closeFocusAllowedAppsPanel,
+  );
   elements.addFocusQuoteButton.addEventListener("click", addFocusQuote);
   elements.focusQuoteInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -6326,6 +7005,7 @@ function bindEvents() {
     "click",
     openFocusExitDialog,
   );
+  elements.pauseFocusButton.addEventListener("click", pauseFocusRun);
   elements.cancelFocusExitButton.addEventListener("click", () => {
     elements.focusExitDialog.close();
     resumeFocusRun();
@@ -6341,14 +7021,6 @@ function bindEvents() {
   elements.endPausedFocusButton.addEventListener(
     "click",
     openFocusExitDialog,
-  );
-  elements.resumeStoredFocusButton.addEventListener(
-    "click",
-    resumeStoredFocus,
-  );
-  elements.discardStoredFocusButton.addEventListener(
-    "click",
-    discardStoredFocus,
   );
 
   elements.previousReviewDayButton.addEventListener("click", () => {
@@ -6904,13 +7576,21 @@ function bindEvents() {
   });
 
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden && state.focusRun?.status === "running") {
-      pauseFocusRun({ automatic: true });
+    if (document.hidden) {
+      if (state.focusRun?.status === "running") {
+        persistFocusRunProgress();
+      }
+      closeFocusAllowedAppsPanel();
+      return;
     }
     if (!document.hidden && (!nativeApp || state.authenticated)) {
-      if (!state.focusRun) {
+      if (state.focusRun) {
+        tickFocusRun();
+        void setFocusRunnerVisuals({ reload: true });
+      } else {
         render();
       }
+      void refreshFocusLockStatus();
       void refreshNativeNotifications();
       void syncNativeWidgetSnapshot(state.events);
       void handleWidgetLaunch();
@@ -6961,6 +7641,7 @@ if (nativeApp) {
   );
 }
 if (nativeApp && state.authenticated) {
+  void refreshFocusLockStatus();
   void refreshNativeNotifications();
   void syncNativeWidgetSnapshot(state.events);
   void handleWidgetLaunch();
@@ -6985,10 +7666,19 @@ if (nativeApp) {
   globalThis.DailyRouteNative?.App?.addListener?.(
     "appStateChange",
     ({ isActive }) => {
-      if (!isActive && state.focusRun?.status === "running") {
-        pauseFocusRun({ automatic: true });
+      if (!isActive) {
+        if (state.focusRun?.status === "running") {
+          persistFocusRunProgress();
+        }
+        closeFocusAllowedAppsPanel();
+        return;
       }
       if (isActive && state.authenticated) {
+        if (state.focusRun) {
+          tickFocusRun();
+          void setFocusRunnerVisuals({ reload: true });
+        }
+        void refreshFocusLockStatus();
         void refreshNativeNotifications();
         void handleWidgetLaunch();
         void handleAlarmLaunch();
@@ -7000,6 +7690,10 @@ if (nativeApp) {
     "backButton",
     ({ canGoBack }) => {
       if (state.focusRun) {
+        if (!elements.focusAllowedAppsPanel.hidden) {
+          closeFocusAllowedAppsPanel();
+          return;
+        }
         openFocusExitDialog();
         return;
       }

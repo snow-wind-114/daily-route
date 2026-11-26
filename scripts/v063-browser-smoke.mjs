@@ -80,7 +80,7 @@ await evaluate(`(async () => {
   return true;
 })()`);
 await evaluate(
-  `location.replace(location.pathname + "?v060=" + Date.now()); true`,
+  `location.replace(location.pathname + "?v063=" + Date.now()); true`,
 );
 await new Promise((resolve) => setTimeout(resolve, 900));
 
@@ -193,8 +193,10 @@ const result = await evaluate(`(async () => {
     "#tutorialTopicList button",
   ).length;
   document.querySelector('#tutorialTopicList button[data-topic-id="focus"]').click();
-  const tutorialMentionsPause =
-    document.querySelector("#tutorialArticle").textContent.includes("自动暂停");
+  const tutorialMentionsContinuity =
+    document.querySelector("#tutorialArticle").textContent.includes(
+      "按真实时间继续计时",
+    );
   document.querySelector("#closeTutorialDialog").click();
 
   document.querySelector("#activityNavButton").click();
@@ -313,17 +315,84 @@ const result = await evaluate(`(async () => {
     focusView.scrollTop > 0;
   const focusNoHorizontalOverflow =
     focusView.scrollWidth <= focusView.clientWidth;
+  const focusLockCardHiddenOnWeb =
+    document.querySelector("#focusLockCard").hidden;
 
   document.documentElement.requestFullscreen = async () => {};
   document.exitFullscreen = async () => {};
   document.querySelector("#focusFlowList .primary-button").click();
-  await new Promise((resolve) => setTimeout(resolve, 1300));
+  await new Promise((resolve) => setTimeout(resolve, 350));
   const runnerVisible = !document.querySelector("#focusRunner").hidden;
+  const runnerWallpaperBefore =
+    document.querySelector("#focusRunnerBackground").style.backgroundImage;
+  const runnerQuoteBefore =
+    document.querySelector("#focusRunnerQuote").textContent;
+  document.dispatchEvent(new Event("visibilitychange"));
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  const visibilityKeptRunning =
+    document.querySelector("#focusPauseOverlay").hidden &&
+    JSON.parse(
+      localStorage.getItem("daily-route.focus-session.v1"),
+    ).status === "running";
+  const visibilityKeptWallpaper =
+    document.querySelector("#focusRunnerBackground").style.backgroundImage !==
+    "";
+  document.querySelector("#pauseFocusButton").click();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const manualPauseVisible =
+    !document.querySelector("#focusPauseOverlay").hidden;
+  const pausedSession = JSON.parse(
+    localStorage.getItem("daily-route.focus-session.v1"),
+  );
+  const pausedTimer = document.querySelector("#focusRunnerTime").textContent;
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const manualPauseFrozeTimer =
+    document.querySelector("#focusRunnerTime").textContent === pausedTimer;
+  const wallpaperVisibleWhilePaused =
+    document.querySelector("#focusRunnerBackground").style.backgroundImage !==
+    "";
+  document.querySelector("#continueFocusButton").click();
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  const resumeKeptWallpaper =
+    document.querySelector("#focusRunnerBackground").style.backgroundImage !==
+      "" &&
+    document.querySelector("#focusRunnerQuote").textContent ===
+      runnerQuoteBefore &&
+    document.querySelector("#focusPauseOverlay").hidden;
+  await new Promise((resolve) => setTimeout(resolve, 1200));
   document.querySelector("#exitFocusButton").click();
   const exitDialogOpen = document.querySelector("#focusExitDialog").open;
   document.querySelector("#confirmFocusExitButton").click();
   await new Promise((resolve) => setTimeout(resolve, 100));
   const runnerClosed = document.querySelector("#focusRunner").hidden;
+  const focusAllowedAppsButtonHiddenOnWeb =
+    document.querySelector("#openFocusAllowedAppsButton").hidden;
+  const studyRow = [...document.querySelectorAll(".focus-project-row")]
+    .find((row) =>
+      row.querySelector(".focus-project-copy strong")?.textContent.includes("学习"),
+    );
+  const projectActionLabels = [...studyRow.querySelectorAll(
+    ".focus-row-actions button",
+  )].map((button) => button.textContent);
+  const calendarButton = [...studyRow.querySelectorAll(
+    ".focus-row-actions button",
+  )].find((button) => button.textContent === "月历");
+  calendarButton.click();
+  await wait();
+  const focusCalendarOpen =
+    document.querySelector("#focusProjectCalendarDialog").open;
+  const focusCalendarTitle =
+    document.querySelector("#focusCalendarTitle").textContent;
+  const activeCalendarDays =
+    document.querySelectorAll(".focus-calendar-day.is-active").length;
+  document.querySelector(".focus-calendar-day.is-active")?.click();
+  const focusCalendarDetail =
+    document.querySelector("#focusCalendarDetail").textContent;
+  const focusCalendarHasNoInputs =
+    document.querySelectorAll(
+      "#focusProjectCalendarDialog input, #focusProjectCalendarDialog textarea",
+    ).length === 0;
+  document.querySelector("#closeFocusCalendarButton").click();
   const stored = JSON.parse(localStorage.getItem("daily-route.storage.v1"));
 
   return {
@@ -332,7 +401,7 @@ const result = await evaluate(`(async () => {
     restoredTodoDraft,
     tutorialOpen,
     tutorialTopics,
-    tutorialMentionsPause,
+    tutorialMentionsContinuity,
     tutorialBoundsVisible,
     tutorialTopicsFit,
     toolbarButtonsAligned,
@@ -340,6 +409,7 @@ const result = await evaluate(`(async () => {
     selectedCount,
     pauseDisabledForMixed,
     allCategorized,
+    focusAllowedAppsButtonHiddenOnWeb,
     focusProjects: stored.focusProjects.length,
     focusFlows: stored.focusFlows.length,
     focusQuotes: stored.focusQuotes.length,
@@ -348,10 +418,25 @@ const result = await evaluate(`(async () => {
     focusOverflowY,
     focusCanScroll,
     focusNoHorizontalOverflow,
+    focusLockCardHiddenOnWeb,
     flowSteps,
     runnerVisible,
+    runnerWallpaperBefore: runnerWallpaperBefore !== "",
+    visibilityKeptRunning,
+    visibilityKeptWallpaper,
+    manualPauseVisible,
+    pausedSessionStatus: pausedSession.status,
+    manualPauseFrozeTimer,
+    wallpaperVisibleWhilePaused,
+    resumeKeptWallpaper,
     exitDialogOpen,
     runnerClosed,
+    projectActionLabels,
+    focusCalendarOpen,
+    focusCalendarTitle,
+    activeCalendarDays,
+    focusCalendarDetail,
+    focusCalendarHasNoInputs,
     accumulation: stored.focusProjects.map((item) => item.accumulatedSeconds),
     navCount: document.querySelectorAll(".bottom-nav .nav-button").length,
     viewportWidth: innerWidth,
@@ -387,7 +472,7 @@ if (
   !result.restoredTodoDraft ||
   !result.tutorialOpen ||
   result.tutorialTopics !== 7 ||
-  !result.tutorialMentionsPause ||
+  !result.tutorialMentionsContinuity ||
   !result.tutorialBoundsVisible ||
   !result.tutorialTopicsFit ||
   !result.toolbarButtonsAligned ||
@@ -395,6 +480,7 @@ if (
   result.selectedCount !== "已选 3 项" ||
   !result.pauseDisabledForMixed ||
   !result.allCategorized ||
+  !result.focusAllowedAppsButtonHiddenOnWeb ||
   result.focusProjects !== 2 ||
   result.focusFlows !== 1 ||
   result.focusQuotes !== 1 ||
@@ -403,10 +489,25 @@ if (
   result.focusOverflowY !== "auto" ||
   !result.focusCanScroll ||
   !result.focusNoHorizontalOverflow ||
+  !result.focusLockCardHiddenOnWeb ||
   result.flowSteps !== 2 ||
   !result.runnerVisible ||
+  !result.runnerWallpaperBefore ||
+  !result.visibilityKeptRunning ||
+  !result.visibilityKeptWallpaper ||
+  !result.manualPauseVisible ||
+  result.pausedSessionStatus !== "paused" ||
+  !result.manualPauseFrozeTimer ||
+  !result.wallpaperVisibleWhilePaused ||
+  !result.resumeKeptWallpaper ||
   !result.exitDialogOpen ||
   !result.runnerClosed ||
+  result.projectActionLabels.join(",") !== "开始,编辑,月历,删除" ||
+  !result.focusCalendarOpen ||
+  result.focusCalendarTitle !== "学习的月历" ||
+  result.activeCalendarDays < 1 ||
+  !result.focusCalendarDetail.includes("次完成") ||
+  !result.focusCalendarHasNoInputs ||
   result.accumulation.every((seconds) => seconds <= 0) ||
   result.navCount !== 6 ||
   result.documentWidth > result.viewportWidth ||

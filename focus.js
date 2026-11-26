@@ -29,6 +29,61 @@ function validTimestamp(value, fallback) {
     : fallback;
 }
 
+function localDateKey(date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+export function normalizeFocusHistory(raw) {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const byDate = new Map();
+  for (const item of raw) {
+    const date = typeof item?.date === "string" ? item.date : "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      continue;
+    }
+    const parsed = new Date(`${date}T12:00:00`);
+    if (
+      Number.isNaN(parsed.getTime()) ||
+      localDateKey(parsed) !== date
+    ) {
+      continue;
+    }
+    const current = byDate.get(date) ?? {
+      date,
+      seconds: 0,
+      completedRuns: 0,
+    };
+    current.seconds += nonNegativeInteger(item.seconds);
+    current.completedRuns += nonNegativeInteger(item.completedRuns);
+    byDate.set(date, current);
+  }
+  return [...byDate.values()]
+    .filter((item) => item.seconds > 0 || item.completedRuns > 0)
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function addFocusHistory(raw, date, seconds, completed) {
+  const history = normalizeFocusHistory(raw);
+  const day = history.find((item) => item.date === date);
+  if (day) {
+    day.seconds += seconds;
+    day.completedRuns += completed ? 1 : 0;
+  } else {
+    history.push({
+      date,
+      seconds,
+      completedRuns: completed ? 1 : 0,
+    });
+  }
+  return history;
+}
+
 export function emptyFocusState() {
   return {
     focusProjects: [],
@@ -65,6 +120,7 @@ export function normalizeFocusProject(raw) {
     notes: cleanText(raw.notes),
     accumulatedSeconds: nonNegativeInteger(raw.accumulatedSeconds),
     completedRuns: nonNegativeInteger(raw.completedRuns),
+    dailyHistory: normalizeFocusHistory(raw.dailyHistory),
     lastUsedAt:
       typeof raw.lastUsedAt === "string" &&
       !Number.isNaN(Date.parse(raw.lastUsedAt))
@@ -251,6 +307,7 @@ export function focusProjectFromInput(input, existing = null) {
     id: existing?.id ?? createId(),
     accumulatedSeconds: existing?.accumulatedSeconds ?? 0,
     completedRuns: existing?.completedRuns ?? 0,
+    dailyHistory: existing?.dailyHistory ?? [],
     lastUsedAt: existing?.lastUsedAt ?? null,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
@@ -323,6 +380,7 @@ export function addFocusProjectTime(
     return projects;
   }
   const timestamp = now.toISOString();
+  const date = localDateKey(now);
   return projects.map((project) =>
     project.id === projectId
       ? {
@@ -331,6 +389,12 @@ export function addFocusProjectTime(
             project.accumulatedSeconds + elapsed,
           completedRuns:
             project.completedRuns + (completed ? 1 : 0),
+          dailyHistory: addFocusHistory(
+            project.dailyHistory,
+            date,
+            elapsed,
+            completed,
+          ),
           lastUsedAt: timestamp,
           updatedAt: timestamp,
         }
@@ -382,6 +446,7 @@ export function createFocusRun({
   const timestamp = now.toISOString();
   return {
     version: 1,
+    continuityVersion: 2,
     id: createId(),
     title: flow?.title ?? project?.title ?? "专注",
     steps,
@@ -389,8 +454,120 @@ export function createFocusRun({
     stepElapsedSeconds: 0,
     currentStepStartedAt: timestamp,
     status: "running",
+    wallpaperId: null,
+    quoteId: null,
     createdAt: timestamp,
     updatedAt: timestamp,
+  };
+}
+
+export function focusStepElapsedSeconds(session, now = Date.now()) {
+  const runningSeconds =
+    session?.status === "running" && session.currentStepStartedAt
+      ? Math.max(
+          0,
+          Math.floor(
+            (now - Date.parse(session.currentStepStartedAt)) / 1000,
+          ),
+        )
+      : 0;
+  return (session?.stepElapsedSeconds ?? 0) + runningSeconds;
+}
+
+export function focusRunExpectedEndAt(session, now = Date.now()) {
+  if (
+    !session ||
+    session.status !== "running" ||
+    !Array.isArray(session.steps)
+  ) {
+    return null;
+  }
+  let remainingSeconds = 0;
+  for (let index = session.stepIndex; index < session.steps.length; index += 1) {
+    const step = session.steps[index];
+    const elapsed =
+      index === session.stepIndex
+        ? focusStepElapsedSeconds(session, now)
+        : 0;
+    remainingSeconds += Math.max(0, step.durationSeconds - elapsed);
+  }
+  return new Date(now + remainingSeconds * 1000);
+}
+
+export function advanceFocusRun(
+  session,
+  projects,
+  now = new Date(),
+) {
+  if (!session || session.status !== "running") {
+    return {
+      session,
+      projects,
+      completedSteps: [],
+      finished: false,
+    };
+  }
+
+  const timestamp = now.toISOString();
+  let stepIndex = session.stepIndex;
+  let elapsed = focusStepElapsedSeconds(session, now.getTime());
+  let nextProjects = projects;
+  const completedSteps = [];
+
+  while (stepIndex < session.steps.length) {
+    const step = session.steps[stepIndex];
+    if (elapsed < step.durationSeconds) {
+      if (completedSteps.length === 0) {
+        return {
+          session,
+          projects: nextProjects,
+          completedSteps,
+          finished: false,
+        };
+      }
+      return {
+        session: {
+          ...session,
+          stepIndex,
+          stepElapsedSeconds: elapsed,
+          currentStepStartedAt: timestamp,
+          updatedAt: timestamp,
+        },
+        projects: nextProjects,
+        completedSteps,
+        finished: false,
+      };
+    }
+
+    nextProjects = addFocusProjectTime(
+      nextProjects,
+      step.projectId,
+      step.durationSeconds,
+      { completed: true, now },
+    );
+    completedSteps.push({
+      projectId: step.projectId,
+      title: step.title,
+      type: step.type,
+      durationSeconds: step.durationSeconds,
+    });
+    elapsed -= step.durationSeconds;
+    stepIndex += 1;
+  }
+
+  return {
+    session: {
+      ...session,
+      stepIndex: session.steps.length - 1,
+      stepElapsedSeconds:
+        session.steps[session.steps.length - 1].durationSeconds,
+      currentStepStartedAt: null,
+      status: "completed",
+      updatedAt: timestamp,
+    },
+    projects: nextProjects,
+    completedSteps,
+    finished: true,
   };
 }
 
@@ -430,8 +607,17 @@ export function normalizeFocusSession(raw) {
     raw.createdAt,
     new Date().toISOString(),
   );
+  const continuityVersion =
+    raw.continuityVersion === 2 ? 2 : 1;
+  const status =
+    raw.status === "completed"
+      ? "completed"
+      : continuityVersion === 2 && raw.status === "running"
+        ? "running"
+        : "paused";
   return {
     version: 1,
+    continuityVersion,
     id:
       typeof raw.id === "string" && raw.id ? raw.id : createId(),
     title: cleanText(raw.title, 40) || "专注",
@@ -442,10 +628,16 @@ export function normalizeFocusSession(raw) {
       nonNegativeInteger(raw.stepElapsedSeconds),
     ),
     currentStepStartedAt:
-      typeof raw.currentStepStartedAt === "string"
+      status === "running" &&
+      typeof raw.currentStepStartedAt === "string" &&
+      !Number.isNaN(Date.parse(raw.currentStepStartedAt))
         ? raw.currentStepStartedAt
         : null,
-    status: raw.status === "running" ? "running" : "paused",
+    status,
+    wallpaperId:
+      typeof raw.wallpaperId === "string" ? raw.wallpaperId : null,
+    quoteId:
+      typeof raw.quoteId === "string" ? raw.quoteId : null,
     createdAt,
     updatedAt: validTimestamp(raw.updatedAt, createdAt),
   };
@@ -460,11 +652,7 @@ export function readFocusSession(storage = localStorage) {
     if (!session) {
       return null;
     }
-    return {
-      ...session,
-      status: "paused",
-      currentStepStartedAt: null,
-    };
+    return session;
   } catch {
     return null;
   }

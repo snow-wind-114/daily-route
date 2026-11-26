@@ -1,13 +1,13 @@
 {
-  "versionCode": 11,
-  "versionName": "0.6.1",
+  "versionCode": 13,
+  "versionName": "0.6.3",
   "apkUrl": "https://github.com/snow-wind-114/daily-route/releases/latest/download/daily-route.apk",
-  "releaseUrl": "https://github.com/snow-wind-114/daily-route/releases/tag/v0.6.1",
+  "releaseUrl": "https://github.com/snow-wind-114/daily-route/releases/tag/v0.6.3",
   "notes": [
-    "修复活动多选工具栏和批量按钮大小不一致",
-    "修复专注页左右偏移并恢复垂直滚动",
-    "修复移动端使用教程顶部与标签遮挡",
-    "新增专注壁纸预览，修正上传图片缩略图显示",
+    "专注运行页新增白名单应用入口",
+    "单次专注项目新增只读月历入口",
+    "月历按天记录专注时间和完成次数",
+    "保留 v0.6.2 锁机、连续计时和壁纸修复",
     "保持 v6 存储和备份格式不变"
   ]
 }
